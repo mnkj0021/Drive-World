@@ -1,6 +1,8 @@
 import { GoogleGenAI } from "@google/genai";
 
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+// Use the same key as the map, as requested
+const apiKey = "AIzaSyBoD6PHm8szopZ1LZu_Vwf3LUC1R2RD3QE";
+const ai = new GoogleGenAI({ apiKey });
 
 export interface GroundingResult {
   text: string;
@@ -44,9 +46,6 @@ export async function getMapsAssistance(
       .map((chunk: any) => ({
         title: chunk.web.title,
         uri: chunk.web.uri,
-        // Note: The API might not return direct lat/lng in chunks, 
-        // we might need to rely on the URI or text parsing in a real scenario.
-        // For this demo, we'll try to extract from text or mock if needed for the UI.
       }));
 
     return { text, locations };

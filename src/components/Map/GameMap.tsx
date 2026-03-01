@@ -19,9 +19,17 @@ export function GameMap({ onMapLoad }: GameMapProps) {
   
   const [mapInstance, setMapInstance] = useState<google.maps.Map | null>(null);
 
-  const { mapStyle, members, user, ghostPath } = useStore();
+  const { mapStyle, setMapStyle, members, user, ghostPath } = useStore();
   const location = useLocation();
   const [authError, setAuthError] = useState<boolean>(false);
+
+  // Set initial style based on time of day
+  useEffect(() => {
+    const hour = new Date().getHours();
+    const isNight = hour >= 18 || hour < 6;
+    setMapStyle(isNight ? 'game-night' : 'game-day');
+  }, []);
+
   const [simulatedMapMode, setSimulatedMapMode] = useState<boolean>(false);
   const [liteMode, setLiteMode] = useState<boolean>(false); // New state for testing without libraries
 

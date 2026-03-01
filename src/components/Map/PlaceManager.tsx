@@ -97,8 +97,8 @@ export function PlaceManager({ map }: PlaceManagerProps) {
     // Gas Station - Fuel Pump
     const gasPath = "M19.8 18.4a1.8 1.8 0 0 0 1.2-1.7V8.3a1.8 1.8 0 0 0-1.8-1.8h-1.4V4.8A1.8 1.8 0 0 0 16 3H8a1.8 1.8 0 0 0-1.8 1.8v13.4H5v-2h1.2V4.8A3 3 0 0 0 3.2 7.8v8.4H2v2h16v-2h-1.2v-6.8h2.4v7.3c0 .5.4.9.9.9s.9-.4.9-.9v-1.3zM8 15V6h6v9H8z";
 
-    // Parking / Hideout - P in a box or similar (Using a simple P shape or Shield)
-    const parkingPath = "M13.5 4h-6a1 1 0 0 0-1 1v14a1 1 0 0 0 2 0v-5h5a5 5 0 0 0 0-10zm0 8h-5V6h5a3 3 0 0 1 0 6z";
+    // Parking / Hideout - Garage / Shield Look
+    const hideoutPath = "M19 5h-2V3H7v2H5c-1.1 0-2 .9-2 2v1c0 2.55 1.92 4.63 4.39 4.94.63 1.5 1.98 2.63 3.61 2.96V19H7v2h10v-2h-4v-3.1c1.63-.33 2.98-1.46 3.61-2.96C19.08 12.63 21 10.55 21 8V7c0-1.1-.9-2-2-2zM7 8c-1.1 0-2-.9-2-2h2v2zm10 0h2c0 1.1-.9 2-2 2v-2z";
 
     // Food - Burger/Drink (Simple Fast Food)
     const foodPath = "M12 2C7.58 2 4 4.24 4 7v2h16V7c0-2.76-3.58-5-8-5zm-8 6v10c0 2.21 1.79 4 4 4h8c2.21 0 4-1.79 4-4V8H4z";
@@ -106,13 +106,13 @@ export function PlaceManager({ map }: PlaceManagerProps) {
     // Colors based on map style
     const mechanicColor = mapStyle === 'game-night' ? '#fbbf24' : '#d97706'; // Amber
     const gasColor = mapStyle === 'game-night' ? '#ef4444' : '#dc2626'; // Red
-    const parkingColor = mapStyle === 'game-night' ? '#3b82f6' : '#2563eb'; // Blue
+    const parkingColor = mapStyle === 'game-night' ? '#8b5cf6' : '#7c3aed'; // Violet (Distinct for Hideout)
     const foodColor = mapStyle === 'game-night' ? '#10b981' : '#059669'; // Green
 
     // Execute searches
     searchNearby('car_repair', wrenchPath, mechanicColor);
     searchNearby('gas_station', gasPath, gasColor);
-    searchNearby('parking', parkingPath, parkingColor);
+    searchNearby('parking', hideoutPath, parkingColor);
     searchNearby('meal_takeaway', foodPath, foodColor); // Focus on takeaway/fast food for drivers
 
   }, [map, location, mapStyle]);

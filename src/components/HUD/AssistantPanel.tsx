@@ -15,8 +15,12 @@ export function AssistantPanel() {
     setIsLoading(true);
     setResult(null);
     
-    // Add "Find" to prompt if not present to guide the model
-    const fullPrompt = `Find ${prompt} near me. Return a list of specific locations.`;
+    // Customize prompt based on selection
+    let fullPrompt = `Find ${prompt} near me. Return a list of specific locations.`;
+    
+    if (prompt === 'Scenic Routes') {
+      fullPrompt = "Find scenic driving routes, coastal roads, mountain passes, or beautiful drives near me. Focus on roads that are good for driving enthusiasts.";
+    }
     
     const res = await getMapsAssistance(fullPrompt, { lat: location.lat, lng: location.lng });
     setResult(res);

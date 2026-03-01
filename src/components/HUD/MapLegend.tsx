@@ -10,13 +10,13 @@ export function MapLegend() {
   // SVG Paths from PlaceManager.tsx
   const wrenchPath = "M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z";
   const gasPath = "M19.8 18.4a1.8 1.8 0 0 0 1.2-1.7V8.3a1.8 1.8 0 0 0-1.8-1.8h-1.4V4.8A1.8 1.8 0 0 0 16 3H8a1.8 1.8 0 0 0-1.8 1.8v13.4H5v-2h1.2V4.8A3 3 0 0 0 3.2 7.8v8.4H2v2h16v-2h-1.2v-6.8h2.4v7.3c0 .5.4.9.9.9s.9-.4.9-.9v-1.3zM8 15V6h6v9H8z";
-  const parkingPath = "M13.5 4h-6a1 1 0 0 0-1 1v14a1 1 0 0 0 2 0v-5h5a5 5 0 0 0 0-10zm0 8h-5V6h5a3 3 0 0 1 0 6z";
+  const hideoutPath = "M19 5h-2V3H7v2H5c-1.1 0-2 .9-2 2v1c0 2.55 1.92 4.63 4.39 4.94.63 1.5 1.98 2.63 3.61 2.96V19H7v2h10v-2h-4v-3.1c1.63-.33 2.98-1.46 3.61-2.96C19.08 12.63 21 10.55 21 8V7c0-1.1-.9-2-2-2zM7 8c-1.1 0-2-.9-2-2h2v2zm10 0h2c0 1.1-.9 2-2 2v-2z";
   const foodPath = "M12 2C7.58 2 4 4.24 4 7v2h16V7c0-2.76-3.58-5-8-5zm-8 6v10c0 2.21 1.79 4 4 4h8c2.21 0 4-1.79 4-4V8H4z";
 
   const items = [
     { label: "Mechanic / Repair", path: wrenchPath, color: "#fbbf24" },
     { label: "Gas Station", path: gasPath, color: "#ef4444" },
-    { label: "Parking / Hideout", path: parkingPath, color: "#3b82f6" },
+    { label: "Hideout / Parking", path: hideoutPath, color: "#8b5cf6" },
     { label: "Food / Takeaway", path: foodPath, color: "#10b981" },
   ];
 
