@@ -15,6 +15,13 @@ interface AppState {
   } | null;
   ghostPath: { lat: number; lng: number }[] | null;
   
+  activeTarget: {
+    location: { lat: number; lng: number };
+    type: 'gas_station' | 'restaurant' | 'parking' | 'car_repair' | null;
+    name: string;
+    totalDistance?: number;
+  } | null;
+
   setUser: (user: UserProfile | null) => void;
   setCrew: (crew: CrewSession | null) => void;
   updateMember: (uid: string, data: Partial<CrewMember>) => void;
@@ -24,6 +31,9 @@ interface AppState {
   toggleSimulator: () => void;
   updateRunStats: (stats: { distance: number; duration: number; speed: number }) => void;
   setGhostPath: (path: { lat: number; lng: number }[] | null) => void;
+  
+  // Game Actions
+  setActiveTarget: (target: { location: { lat: number; lng: number }; type: string; name: string; totalDistance?: number } | null) => void;
 }
 
 export const useStore = create<AppState>((set) => ({
@@ -35,6 +45,8 @@ export const useStore = create<AppState>((set) => ({
   isSimulatorActive: false, // Default to false for real location
   currentRunStats: null,
   ghostPath: null,
+  
+  activeTarget: null,
 
   setUser: (user) => set({ user }),
   setCrew: (crew) => set({ crew }),
@@ -50,4 +62,6 @@ export const useStore = create<AppState>((set) => ({
   toggleSimulator: () => set((state) => ({ isSimulatorActive: !state.isSimulatorActive })),
   updateRunStats: (stats) => set({ currentRunStats: stats }),
   setGhostPath: (path) => set({ ghostPath: path }),
+  
+  setActiveTarget: (target) => set({ activeTarget: target as any }),
 }));

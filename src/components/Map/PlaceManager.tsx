@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useStore } from '../../lib/store';
 import { useLocation } from '../../hooks/useLocation';
+import { gamifyName } from '../../lib/nameGamifier';
 
 interface PlaceManagerProps {
   map: google.maps.Map | null;
@@ -57,23 +58,33 @@ export function PlaceManager({ map }: PlaceManagerProps) {
                 fillOpacity: 1,
                 strokeWeight: 1,
                 strokeColor: '#ffffff',
-                scale: 1.2, // Reduced scale from 1.5
+                scale: 1.5, // Increased scale from 1.2
                 anchor: new google.maps.Point(12, 12),
               };
+
+              const gamifiedName = gamifyName(place.name || "Unknown Location");
 
               const marker = new google.maps.Marker({
                 map,
                 position: place.geometry.location,
-                title: place.name,
+                title: gamifiedName,
                 icon: svgIcon,
                 zIndex: 50 // Below player
               });
 
               // Add click listener for navigation
               marker.addListener('click', () => {
-                console.log("Selected place:", place.name);
+                console.log("Selected place:", gamifiedName);
+                
+                // Set as Active Target in Store
+                useStore.getState().setActiveTarget({
+                  location: { lat: place.geometry!.location!.lat(), lng: place.geometry!.location!.lng() },
+                  type: type,
+                  name: gamifiedName
+                });
+
                 if ((window as any).calculateRoute && place.geometry?.location) {
-                  (window as any).calculateRoute(place.geometry.location);
+                  (window as any).calculateRoute(place.geometry.location, gamifiedName);
                 }
               });
 
@@ -104,7 +115,7 @@ export function PlaceManager({ map }: PlaceManagerProps) {
     const foodPath = "M12 2C7.58 2 4 4.24 4 7v2h16V7c0-2.76-3.58-5-8-5zm-8 6v10c0 2.21 1.79 4 4 4h8c2.21 0 4-1.79 4-4V8H4z";
 
     // Colors based on map style
-    const mechanicColor = mapStyle === 'game-night' ? '#fbbf24' : '#d97706'; // Amber
+    const mechanicColor = '#3b82f6'; // Vibrant Blue
     const gasColor = mapStyle === 'game-night' ? '#ef4444' : '#dc2626'; // Red
     const parkingColor = mapStyle === 'game-night' ? '#8b5cf6' : '#7c3aed'; // Violet (Distinct for Hideout)
     const foodColor = mapStyle === 'game-night' ? '#10b981' : '#059669'; // Green

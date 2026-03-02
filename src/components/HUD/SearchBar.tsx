@@ -3,9 +3,10 @@ import { Search, Navigation, X, CarFront } from 'lucide-react';
 import { useStore } from '../../lib/store';
 import { cn } from '../../lib/utils';
 import { useLocation } from '../../hooks/useLocation';
+import { gamifyName } from '../../lib/nameGamifier';
 
 interface SearchBarProps {
-  onPlaceSelect: (location: google.maps.LatLng) => void;
+  onPlaceSelect: (location: google.maps.LatLng, name?: string) => void;
 }
 
 export function SearchBar({ onPlaceSelect }: SearchBarProps) {
@@ -18,8 +19,17 @@ export function SearchBar({ onPlaceSelect }: SearchBarProps) {
   const placesService = useRef<google.maps.places.PlacesService | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   
-  const { mapStyle } = useStore();
+  const { mapStyle, activeTarget, setActiveTarget } = useStore();
   const location = useLocation();
+
+  // Sync query with active target name if it changes externally
+  useEffect(() => {
+    if (activeTarget) {
+      setQuery(gamifyName(activeTarget.name));
+    } else if (!isOpen) {
+      setQuery('');
+    }
+  }, [activeTarget, isOpen]);
 
   useEffect(() => {
     // Poll for Google Maps API availability
@@ -77,8 +87,8 @@ export function SearchBar({ onPlaceSelect }: SearchBarProps) {
     try {
       placesService.current.getDetails({ placeId }, (place, status) => {
         if (status === google.maps.places.PlacesServiceStatus.OK && place?.geometry?.location) {
-          onPlaceSelect(place.geometry.location);
-          setQuery(place.name || '');
+          onPlaceSelect(place.geometry.location, place.name);
+          setQuery(gamifyName(place.name || '')); // Gamify the selected name
           setIsOpen(false);
           setPredictions([]);
         }
@@ -125,8 +135,8 @@ export function SearchBar({ onPlaceSelect }: SearchBarProps) {
           const randomPlace = pool[Math.floor(Math.random() * pool.length)];
           
           if (randomPlace.geometry?.location) {
-            onPlaceSelect(randomPlace.geometry.location);
-            setQuery(`Cruise to: ${randomPlace.name}`);
+            onPlaceSelect(randomPlace.geometry.location, randomPlace.name);
+            setQuery(`Cruise to: ${gamifyName(randomPlace.name || '')}`); // Gamify
             setPredictions([]);
             setIsOpen(false);
           }
@@ -146,28 +156,38 @@ export function SearchBar({ onPlaceSelect }: SearchBarProps) {
     setQuery('');
     setPredictions([]);
     setIsOpen(false);
+    // Also clear the active route if we clear the search
+    if (activeTarget) {
+      setActiveTarget(null);
+      if ((window as any).clearRoute) {
+        (window as any).clearRoute();
+      }
+    }
   };
 
   return (
-    <div className="relative w-full max-w-md pointer-events-auto flex gap-2">
+    <div className="relative w-full max-w-md pointer-events-auto flex gap-3 z-50">
       <div className={cn(
-        "flex-1 flex items-center px-4 py-3 rounded-xl border backdrop-blur-md transition-all",
+        "flex-1 flex items-center px-5 py-4 rounded-2xl border transition-all duration-300 group",
         mapStyle === 'game-night' 
-          ? "bg-slate-900/80 border-slate-700 text-white shadow-[0_0_15px_rgba(0,0,0,0.5)]" 
-          : "bg-white/90 border-slate-200 text-slate-800 shadow-lg"
+          ? "bg-slate-900/80 border-slate-700/50 text-white shadow-[0_0_20px_rgba(0,0,0,0.5)] focus-within:shadow-[0_0_30px_rgba(59,130,246,0.3)] focus-within:border-blue-500/50" 
+          : "bg-white/80 border-white/40 text-slate-800 shadow-xl backdrop-blur-xl focus-within:shadow-2xl focus-within:bg-white/95"
       )}>
-        <Search className={cn("w-5 h-5 mr-3", mapStyle === 'game-night' ? "text-slate-400" : "text-slate-500")} />
+        <Search className={cn(
+          "w-5 h-5 mr-3 transition-colors", 
+          mapStyle === 'game-night' ? "text-slate-400 group-focus-within:text-blue-400" : "text-slate-400 group-focus-within:text-slate-600"
+        )} />
         <input
           ref={inputRef}
           type="text"
           value={query}
           onChange={(e) => handleSearch(e.target.value)}
           placeholder="Search destination..."
-          className="bg-transparent border-none outline-none w-full font-medium placeholder:text-slate-500"
+          className="bg-transparent border-none outline-none w-full font-medium placeholder:text-slate-500/70 text-sm tracking-wide"
         />
         {query && (
-          <button onClick={clearSearch}>
-            <X className="w-5 h-5 text-slate-500 hover:text-red-500 transition-colors" />
+          <button onClick={clearSearch} className="p-1 hover:bg-white/10 rounded-full transition-colors">
+            <X className="w-4 h-4 text-slate-500 hover:text-red-500 transition-colors" />
           </button>
         )}
       </div>
@@ -176,37 +196,44 @@ export function SearchBar({ onPlaceSelect }: SearchBarProps) {
         onClick={handleCruise}
         disabled={isSearchingScenic}
         className={cn(
-          "px-4 py-3 rounded-xl border backdrop-blur-md transition-all flex items-center justify-center",
+          "px-5 py-4 rounded-2xl border backdrop-blur-xl transition-all flex items-center justify-center shadow-lg hover:scale-105 active:scale-95",
           mapStyle === 'game-night'
-            ? "bg-slate-900/80 border-slate-700 text-cyan-400 hover:bg-slate-800 hover:text-cyan-300 shadow-[0_0_15px_rgba(0,0,0,0.5)]"
-            : "bg-white/90 border-slate-200 text-cyan-600 hover:bg-cyan-50 shadow-lg",
+            ? "bg-slate-900/80 border-cyan-500/30 text-cyan-400 hover:bg-cyan-500/10 hover:border-cyan-500/60 shadow-[0_0_20px_rgba(6,182,212,0.2)]"
+            : "bg-white/80 border-white/40 text-cyan-600 hover:bg-cyan-50 shadow-xl",
           isSearchingScenic && "opacity-50 cursor-wait"
         )}
         title="Find a Meetup Spot (Cruise)"
       >
-        <CarFront className={cn("w-5 h-5", isSearchingScenic && "animate-pulse")} />
+        <CarFront className={cn("w-6 h-6", isSearchingScenic && "animate-pulse")} />
       </button>
 
       {isOpen && predictions.length > 0 && (
         <div className={cn(
-          "absolute top-full left-0 right-0 mt-2 rounded-xl border overflow-hidden backdrop-blur-md z-50",
+          "absolute top-full left-0 right-0 mt-3 rounded-2xl border overflow-hidden backdrop-blur-xl z-50 shadow-2xl animate-in fade-in slide-in-from-top-2",
           mapStyle === 'game-night' 
-            ? "bg-slate-900/90 border-slate-700 text-white" 
-            : "bg-white/95 border-slate-200 text-slate-800"
+            ? "bg-slate-900/95 border-slate-700/50 text-white" 
+            : "bg-white/90 border-white/40 text-slate-800"
         )}>
           {predictions.map((p) => (
             <button
               key={p.place_id}
               onClick={() => handleSelect(p.place_id)}
               className={cn(
-                "w-full text-left px-4 py-3 flex items-center gap-3 transition-colors",
-                mapStyle === 'game-night' ? "hover:bg-slate-800 border-b border-slate-800 last:border-0" : "hover:bg-slate-50 border-b border-slate-100 last:border-0"
+                "w-full text-left px-5 py-4 flex items-center gap-4 transition-all duration-200 group",
+                mapStyle === 'game-night' 
+                  ? "hover:bg-slate-800/80 border-b border-slate-800/50 last:border-0 hover:pl-7" 
+                  : "hover:bg-white/60 border-b border-slate-100/50 last:border-0 hover:pl-7"
               )}
             >
-              <Navigation className="w-4 h-4 opacity-50" />
+              <div className={cn(
+                "p-2 rounded-full transition-colors",
+                mapStyle === 'game-night' ? "bg-slate-800 group-hover:bg-blue-500/20 group-hover:text-blue-400" : "bg-slate-100 group-hover:bg-blue-50 group-hover:text-blue-600"
+              )}>
+                <Navigation className="w-4 h-4 opacity-70" />
+              </div>
               <div>
-                <div className="font-medium text-sm">{p.structured_formatting.main_text}</div>
-                <div className="text-xs opacity-60">{p.structured_formatting.secondary_text}</div>
+                <div className="font-bold text-sm tracking-wide">{gamifyName(p.structured_formatting.main_text)}</div>
+                <div className="text-xs opacity-50 mt-0.5 font-medium">{p.structured_formatting.secondary_text}</div>
               </div>
             </button>
           ))}

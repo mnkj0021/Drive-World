@@ -19,7 +19,7 @@ export function GameMap({ onMapLoad }: GameMapProps) {
   
   const [mapInstance, setMapInstance] = useState<google.maps.Map | null>(null);
 
-  const { mapStyle, setMapStyle, members, user, ghostPath } = useStore();
+  const { mapStyle, setMapStyle, members, user, ghostPath, setActiveTarget } = useStore();
   const location = useLocation();
   const [authError, setAuthError] = useState<boolean>(false);
 
@@ -194,16 +194,18 @@ export function GameMap({ onMapLoad }: GameMapProps) {
       }
 
       // Create player marker
+      const color = mapStyle === 'game-night' ? "#00ffcc" : "#2563eb";
       markerRef.current = new google.maps.Marker({
         map,
         icon: {
-          path: google.maps.SymbolPath.FORWARD_CLOSED_ARROW,
-          scale: 6,
-          fillColor: "#00ffcc",
+          path: 'M 0,-15 L 10,10 L 0,5 L -10,10 Z',
+          fillColor: color,
           fillOpacity: 1,
           strokeWeight: 2,
           strokeColor: "#ffffff",
+          scale: 1.2,
           rotation: 0,
+          anchor: new google.maps.Point(0, 0)
         },
         zIndex: 1000
       });
@@ -301,121 +303,151 @@ export function GameMap({ onMapLoad }: GameMapProps) {
     }
   }, [mapStyle]);
 
-  // Update Player Position & Camera
+  // Animate Route Icons
   useEffect(() => {
-    if (!googleMapRef.current || !location || !markerRef.current) return;
+    let animationFrameId: number;
+    let offset = 0;
 
-    const pos = { lat: location.lat, lng: location.lng };
-    
-    // Smooth pan
-    googleMapRef.current.panTo(pos);
-    googleMapRef.current.setHeading(location.heading);
-
-    // Update marker
-    markerRef.current.setPosition(pos);
-    const icon = markerRef.current.getIcon() as google.maps.Symbol;
-    icon.rotation = location.heading;
-    markerRef.current.setIcon(icon);
-
-  }, [location]);
-
-  // Update Crew Markers
-  useEffect(() => {
-    if (!googleMapRef.current) return;
-
-    const updateMarkers = async () => {
-      // Use global google.maps.Marker instead of importLibrary
-      if (!window.google || !window.google.maps) return;
-
-      // Add/Update markers
-      Object.values(members).forEach(member => {
-        if (!member.location) return;
+    const animate = () => {
+      if (directionsRendererRef.current) {
+        // We can't access the polyline directly from DirectionsRenderer easily to animate it efficiently
+        // So we might need to re-set options, but that's heavy.
+        // Instead, let's try to access the underlying polyline if possible, OR
+        // just rely on the static arrow for now to avoid performance hit on low-end devices.
+        // However, user requested animation.
         
-        let marker = crewMarkersRef.current[member.uid];
+        // To do this properly without performance kill, we should use a separate Polyline for the animation
+        // and hide the default one. But DirectionsRenderer handles complex paths.
         
-        if (!marker) {
-          marker = new google.maps.Marker({
-            map: googleMapRef.current,
-            icon: {
-              path: google.maps.SymbolPath.FORWARD_CLOSED_ARROW,
-              scale: 5,
-              fillColor: "#ff0055", // Crew color
-              fillOpacity: 1,
-              strokeWeight: 2,
-              strokeColor: "#ffffff",
-              rotation: 0,
-            },
-            label: {
-              text: member.displayName,
-              color: "white",
-              fontSize: "10px",
-              className: "bg-black/50 px-1 rounded"
-            },
-            zIndex: 900
-          });
-          crewMarkersRef.current[member.uid] = marker;
-        }
-
-        const pos = { lat: member.location.lat, lng: member.location.lng };
-        marker.setPosition(pos);
-        
-        const icon = marker.getIcon() as google.maps.Symbol;
-        icon.rotation = member.location.heading;
-        marker.setIcon(icon);
-      });
-
-      // Remove stale markers
-      Object.keys(crewMarkersRef.current).forEach(uid => {
-        if (!members[uid]) {
-          crewMarkersRef.current[uid].setMap(null);
-          delete crewMarkersRef.current[uid];
-        }
-      });
+        // Let's try a lighter approach: Interval based update (not 60fps)
+      }
+      // animationFrameId = requestAnimationFrame(animate);
     };
+    
+    // animate();
+    // return () => cancelAnimationFrame(animationFrameId);
+    
+    // Implementing "Energy Transfer" via CSS or simpler method is hard on Canvas map.
+    // Let's use a separate interval to update the polyline icons if a route exists.
+    
+    const interval = setInterval(() => {
+       if (directionsRendererRef.current && directionsRendererRef.current.getMap()) {
+          // This is a bit hacky as we can't easily get the polyline instance from DirectionsRenderer
+          // A better way is to render a custom Polyline when we have route data.
+          // But for now, we'll stick to the static arrows as re-rendering options is too heavy.
+       }
+    }, 100);
 
-    updateMarkers();
+    return () => clearInterval(interval);
+  }, []);
 
-  }, [members]);
-
-  // Render Ghost Path
+  // Update Player Marker Position
   useEffect(() => {
-    if (!googleMapRef.current) return;
+    if (!markerRef.current || !location) return;
+    
+    const pos = { lat: location.lat, lng: location.lng };
+    markerRef.current.setPosition(pos);
+    
+    // Update icon rotation and color based on style
+    const color = mapStyle === 'game-night' ? "#00ffcc" : "#2563eb";
+    markerRef.current.setIcon({
+      path: 'M 0,-15 L 10,10 L 0,5 L -10,10 Z',
+      fillColor: color,
+      fillOpacity: 1,
+      strokeWeight: 2,
+      strokeColor: "#ffffff",
+      scale: 1.2,
+      rotation: location.heading || 0,
+      anchor: new google.maps.Point(0, 0)
+    });
 
-    const updateGhost = async () => {
-      // Use global google.maps.Polyline instead of importLibrary
-      if (!window.google || !window.google.maps) return;
+  }, [location, mapStyle, mapInstance]);
 
-      if (ghostPath && ghostPath.length > 0) {
-        if (!ghostPolylineRef.current) {
-          ghostPolylineRef.current = new google.maps.Polyline({
-            map: googleMapRef.current,
-            strokeColor: "#00ffcc",
-            strokeOpacity: 0.6,
-            strokeWeight: 4,
-            geodesic: true,
-          });
-        }
-        ghostPolylineRef.current.setPath(ghostPath);
-        
-        // Fit bounds to show the run
-        const bounds = new google.maps.LatLngBounds();
-        ghostPath.forEach(p => bounds.extend(p));
-        googleMapRef.current.fitBounds(bounds);
+  // Custom Route Rendering for Animation
+  const routeLayersRef = useRef<google.maps.Polyline[]>([]);
+  const routeMarkersRef = useRef<google.maps.Marker[]>([]); // Store custom start/end markers
 
-      } else {
-        if (ghostPolylineRef.current) {
-          ghostPolylineRef.current.setMap(null);
-          ghostPolylineRef.current = null;
+  // Custom Pin SVGs (Base64 encoded for Google Maps)
+  // Origin: Cyan Radar Pulse
+  const ORIGIN_PIN = 'data:image/svg+xml;base64,' + btoa(`
+  <svg width="60" height="60" viewBox="0 0 60 60" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+      <filter id="glow-cyan" x="-50%" y="-50%" width="200%" height="200%">
+        <feGaussianBlur stdDeviation="4" result="coloredBlur"/>
+        <feMerge>
+          <feMergeNode in="coloredBlur"/>
+          <feMergeNode in="SourceGraphic"/>
+        </feMerge>
+      </filter>
+    </defs>
+    <circle cx="30" cy="30" r="8" fill="#00f0ff" filter="url(#glow-cyan)">
+      <animate attributeName="opacity" values="1;0.5;1" dur="2s" repeatCount="indefinite" />
+    </circle>
+    <circle cx="30" cy="30" r="4" fill="#ffffff" />
+    <circle cx="30" cy="30" r="16" stroke="#00f0ff" stroke-width="2" fill="none" opacity="0.6" />
+    <circle cx="30" cy="30" r="24" stroke="#00f0ff" stroke-width="1" fill="none" opacity="0.3" stroke-dasharray="4 4" />
+  </svg>`);
+
+  // Destination: Magenta Crystal Drop
+  const DEST_PIN = 'data:image/svg+xml;base64,' + btoa(`
+  <svg width="60" height="60" viewBox="0 0 60 60" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+      <filter id="glow-pink" x="-50%" y="-50%" width="200%" height="200%">
+        <feGaussianBlur stdDeviation="4" result="coloredBlur"/>
+        <feMerge>
+          <feMergeNode in="coloredBlur"/>
+          <feMergeNode in="SourceGraphic"/>
+        </feMerge>
+      </filter>
+      <linearGradient id="grad-pink" x1="0%" y1="0%" x2="100%" y2="100%">
+        <stop offset="0%" style="stop-color:#ff00cc;stop-opacity:1" />
+        <stop offset="100%" style="stop-color:#330033;stop-opacity:1" />
+      </linearGradient>
+    </defs>
+    <path d="M30 54 L16 26 C16 18 22 12 30 12 C38 12 44 18 44 26 L30 54 Z" fill="url(#grad-pink)" stroke="#ff00cc" stroke-width="2" filter="url(#glow-pink)" />
+    <circle cx="30" cy="26" r="6" fill="#ffffff" />
+  </svg>`);
+
+  useEffect(() => {
+    let animationId: number;
+    
+    const animate = () => {
+      const time = Date.now();
+      
+      // Pulse Effect (Sine wave) - Subtle breathing
+      const pulse = (Math.sin(time / 800) + 1) / 2; // 0 to 1
+      
+      // Flow Effect (Linear) - Continuous stream
+      // Cycle through 20px (the repeat interval)
+      const pixelOffset = (time / 15) % 20;
+      
+      const layers = routeLayersRef.current;
+      
+      if (layers.length >= 3) {
+        // Layer 1: Wide Glow (Pulse Opacity)
+        layers[0].setOptions({ strokeOpacity: 0.1 + (pulse * 0.15) }); // 0.1 to 0.25
+
+        // Layer 3: Flowing Stream (Moving Dash)
+        if (layers[2]) {
+           const icons = layers[2].get('icons');
+           if (icons && icons[0]) {
+             icons[0].offset = pixelOffset + 'px';
+             layers[2].set('icons', icons);
+           }
         }
       }
+      
+      animationId = requestAnimationFrame(animate);
     };
+    
+    animationId = requestAnimationFrame(animate);
 
-    updateGhost();
-  }, [ghostPath]);
+    return () => cancelAnimationFrame(animationId);
+  }, []);
 
-  // Expose routing function to window for SearchBar to call (hacky but effective for decoupled components)
+  // Expose routing function to window for SearchBar to call
   useEffect(() => {
-    (window as any).calculateRoute = (destination: google.maps.LatLng) => {
+    (window as any).calculateRoute = (destination: google.maps.LatLng, name?: string) => {
       if (!directionsServiceRef.current || !directionsRendererRef.current || !location) return;
 
       directionsServiceRef.current.route({
@@ -423,14 +455,124 @@ export function GameMap({ onMapLoad }: GameMapProps) {
         destination: destination,
         travelMode: google.maps.TravelMode.DRIVING
       }, (result, status) => {
-        if (status === google.maps.DirectionsStatus.OK) {
+        if (status === google.maps.DirectionsStatus.OK && result) {
+          const leg = result.routes[0].legs[0];
+          const totalDistance = leg.distance?.value || 0;
+
+          // Update store with target
+          setActiveTarget({
+            location: { lat: destination.lat(), lng: destination.lng() },
+            name: name || "Custom Point",
+            type: null,
+            totalDistance: totalDistance
+          });
+
+          // Standard Renderer (Hidden Polyline, just for markers/logic if needed)
           directionsRendererRef.current?.setDirections(result);
+          directionsRendererRef.current?.setOptions({
+            polylineOptions: {
+              visible: false // Hide default line
+            },
+            suppressMarkers: true // Hide default A/B markers so we can use custom ones
+          });
+          
+          // Clear old custom markers
+          routeMarkersRef.current.forEach(m => m.setMap(null));
+          routeMarkersRef.current = [];
+
+          // Create Custom Origin Marker
+          const originMarker = new google.maps.Marker({
+            position: leg.start_location,
+            map: googleMapRef.current,
+            icon: {
+              url: ORIGIN_PIN,
+              scaledSize: new google.maps.Size(80, 80),
+              anchor: new google.maps.Point(40, 40) // Center
+            },
+            zIndex: 100
+          });
+
+          // Create Custom Destination Marker
+          const destMarker = new google.maps.Marker({
+            position: leg.end_location,
+            map: googleMapRef.current,
+            icon: {
+              url: DEST_PIN,
+              scaledSize: new google.maps.Size(80, 80),
+              anchor: new google.maps.Point(40, 75) // Bottom tip
+            },
+            zIndex: 100,
+            animation: google.maps.Animation.DROP
+          });
+
+          routeMarkersRef.current = [originMarker, destMarker];
+          
+          // Custom Animated Polylines (The "Full Layered" Effect)
+          if (googleMapRef.current && result.routes[0]?.overview_path) {
+             // Clear old layers
+             routeLayersRef.current.forEach(p => p.setMap(null));
+             routeLayersRef.current = [];
+             
+             const path = result.routes[0].overview_path;
+             const baseColor = mapStyle === 'game-night' ? '#00ffcc' : '#2563eb';
+             const glowColor = mapStyle === 'game-night' ? '#00ffcc' : '#3b82f6';
+             const coreColor = '#ffffff';
+
+             // Layer 1: Wide Outer Glow (Atmosphere)
+             const layer1 = new google.maps.Polyline({
+               path,
+               map: googleMapRef.current,
+               strokeColor: glowColor,
+               strokeWeight: 12, // Reduced from 22
+               strokeOpacity: 0.15,
+               zIndex: 10,
+               clickable: false
+             });
+             
+             // Layer 2: Medium Base (Body)
+             const layer2 = new google.maps.Polyline({
+               path,
+               map: googleMapRef.current,
+               strokeColor: baseColor,
+               strokeWeight: 6, // Reduced from 10
+               strokeOpacity: 0.6,
+               zIndex: 11,
+               clickable: false
+             });
+             
+             // Layer 3: Flowing Stream (Animation)
+             // A repeating dashed pattern that moves to simulate flow
+             const layer3 = new google.maps.Polyline({
+               path,
+               map: googleMapRef.current,
+               strokeColor: 'transparent', // Invisible line, only icons visible
+               strokeWeight: 0,
+               zIndex: 12,
+               clickable: false,
+               icons: [{
+                 icon: {
+                   path: 'M 0,-4 L 0,4', // 8px dash
+                   strokeColor: '#ffffff',
+                   strokeWeight: 2,
+                   scale: 1,
+                   strokeOpacity: 0.5 // Semi-transparent to blend
+                 },
+                 offset: '0px',
+                 repeat: '20px' // Repeat every 20px
+               }]
+             });
+             
+             routeLayersRef.current = [layer1, layer2, layer3];
+          }
+
         } else {
-          console.error("Directions request failed due to " + status);
+          console.warn('Directions request failed due to ' + status);
         }
       });
     };
-  }, [location]);
+  }, [location, mapStyle, mapInstance]);
+
+
 
   // Expose panTo function
   useEffect(() => {
@@ -439,6 +581,16 @@ export function GameMap({ onMapLoad }: GameMapProps) {
         googleMapRef.current.panTo(pos);
         googleMapRef.current.setZoom(17);
       }
+    };
+
+    (window as any).clearRoute = () => {
+      if (directionsRendererRef.current) {
+        directionsRendererRef.current.setDirections({ routes: [] });
+      }
+      routeLayersRef.current.forEach(p => p.setMap(null));
+      routeLayersRef.current = [];
+      routeMarkersRef.current.forEach(m => m.setMap(null));
+      routeMarkersRef.current = [];
     };
   }, []);
 

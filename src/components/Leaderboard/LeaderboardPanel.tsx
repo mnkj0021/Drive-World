@@ -52,17 +52,15 @@ export function LeaderboardPanel() {
   return (
     <>
       {/* Trigger */}
-      <div className="absolute top-6 right-6 z-20 pointer-events-auto">
-        <button 
-          onClick={() => setIsOpen(true)}
-          className="bg-black/40 backdrop-blur-md border border-white/10 rounded-xl p-4 text-white hover:bg-white/5 transition-colors group"
-        >
-          <div className="flex items-center gap-2 text-yellow-400">
-            <Trophy size={20} />
-            <span className="font-bold text-sm tracking-wider hidden group-hover:inline">LEADERBOARD</span>
-          </div>
-        </button>
-      </div>
+      <button 
+        onClick={() => setIsOpen(true)}
+        className="bg-black/40 backdrop-blur-md border border-white/10 rounded-xl p-4 text-white hover:bg-white/5 transition-colors group h-full"
+      >
+        <div className="flex items-center gap-2 text-yellow-400">
+          <Trophy size={20} />
+          <span className="font-bold text-sm tracking-wider hidden group-hover:inline">LEADERBOARD</span>
+        </div>
+      </button>
 
       {/* Modal */}
       <AnimatePresence>

@@ -1,14 +1,21 @@
 import { useEffect, useState } from 'react';
 import { getMapsAssistance, GroundingResult } from '../../lib/gemini';
 import { useLocation } from '../../hooks/useLocation';
-import { Zap, X, MapPin } from 'lucide-react';
+import { Sparkles, X, MapPin, Zap } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { cn } from '../../lib/utils';
 
-export function AssistantPanel() {
-  const [isOpen, setIsOpen] = useState(false);
+interface AssistantPanelProps {
+  isOpen: boolean;
+  setIsOpen: (open: boolean) => void;
+}
+
+export function AssistantPanel({ isOpen, setIsOpen }: AssistantPanelProps) {
   const [isLoading, setIsLoading] = useState(false);
   const [result, setResult] = useState<GroundingResult | null>(null);
   const location = useLocation();
+
+  const [radius, setRadius] = useState<number>(5); // Radius in km
 
   const handleQuery = async (prompt: string) => {
     if (!location) return;
@@ -16,10 +23,10 @@ export function AssistantPanel() {
     setResult(null);
     
     // Customize prompt based on selection
-    let fullPrompt = `Find ${prompt} near me. Return a list of specific locations.`;
+    let fullPrompt = `Find ${prompt} near me within ${radius}km. Return a list of specific locations.`;
     
     if (prompt === 'Scenic Routes') {
-      fullPrompt = "Find scenic driving routes, coastal roads, mountain passes, or beautiful drives near me. Focus on roads that are good for driving enthusiasts.";
+      fullPrompt = `Find scenic driving routes, coastal roads, mountain passes, or beautiful drives near me within ${radius}km. Focus on roads that are good for driving enthusiasts.`;
     }
     
     const res = await getMapsAssistance(fullPrompt, { lat: location.lat, lng: location.lng });
@@ -28,31 +35,54 @@ export function AssistantPanel() {
   };
 
   return (
-    <div className="fixed bottom-32 left-6 z-30">
-      <AnimatePresence>
-        {isOpen && (
+    <AnimatePresence>
+      {isOpen && (
+        <div className="fixed inset-0 z-[100] pointer-events-none flex items-center justify-center p-4 md:items-start md:justify-start md:p-0 md:absolute md:inset-auto md:bottom-full md:left-0 md:mb-4">
           <motion.div 
-            initial={{ opacity: 0, y: 20, scale: 0.9 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 20, scale: 0.9 }}
-            className="bg-black/80 backdrop-blur-xl border border-white/10 rounded-2xl p-6 w-96 mb-4 shadow-2xl"
+            initial={{ opacity: 0, y: 20, scale: 0.95, filter: "blur(10px)" }}
+            animate={{ opacity: 1, y: 0, scale: 1, filter: "blur(0px)" }}
+            exit={{ opacity: 0, y: 20, scale: 0.95, filter: "blur(10px)" }}
+            transition={{ duration: 0.2 }}
+            className="pointer-events-auto bg-black/90 backdrop-blur-2xl border border-white/10 rounded-3xl p-6 w-full max-w-sm md:w-96 shadow-[0_0_50px_rgba(0,0,0,0.8)] overflow-hidden relative"
           >
-            <div className="flex justify-between items-center mb-4">
-              <h3 className="text-emerald-400 font-bold tracking-wider flex items-center gap-2">
-                <Zap size={16} /> CO-PILOT
+            {/* Decorative Glow */}
+            <div className="absolute -top-20 -right-20 w-40 h-40 bg-emerald-500/20 rounded-full blur-3xl pointer-events-none" />
+            
+            <div className="flex justify-between items-center mb-6 relative z-10">
+              <h3 className="text-emerald-400 font-bold tracking-[0.2em] text-xs flex items-center gap-2 uppercase">
+                <Sparkles size={14} className="animate-pulse" /> AI Co-Pilot
               </h3>
-              <button onClick={() => setIsOpen(false)} className="text-gray-500 hover:text-white">
+              <button 
+                onClick={() => setIsOpen(false)} 
+                className="text-gray-500 hover:text-white transition-colors p-1 hover:bg-white/10 rounded-full"
+              >
                 <X size={16} />
               </button>
             </div>
 
-            <div className="space-y-2 mb-6">
+            {/* Radius Selector */}
+            <div className="mb-6 relative z-10">
+              <div className="flex justify-between items-center mb-3">
+                <label className="text-[10px] text-gray-400 uppercase font-bold tracking-wider">Search Radius</label>
+                <span className="text-emerald-400 font-mono text-xs">{radius} KM</span>
+              </div>
+              <input 
+                type="range" 
+                min="1" 
+                max="50" 
+                value={radius} 
+                onChange={(e) => setRadius(parseInt(e.target.value))}
+                className="w-full h-1.5 bg-gray-800 rounded-full appearance-none cursor-pointer accent-emerald-500 hover:accent-emerald-400 transition-all"
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-2 mb-6 relative z-10">
               {['Scenic Routes', 'Car Meets', 'Gas Stations', 'Late Night Food'].map((item) => (
                 <button
                   key={item}
                   onClick={() => handleQuery(item)}
                   disabled={isLoading}
-                  className="block w-full text-left px-4 py-3 rounded-lg bg-white/5 hover:bg-white/10 text-sm text-gray-200 transition-colors border border-white/5"
+                  className="text-left px-4 py-3 rounded-xl bg-white/5 hover:bg-white/10 text-xs font-bold text-gray-300 hover:text-white transition-all border border-white/5 hover:border-white/20 hover:shadow-[0_0_15px_rgba(255,255,255,0.1)] active:scale-95"
                 >
                   {item}
                 </button>
@@ -60,14 +90,16 @@ export function AssistantPanel() {
             </div>
 
             {isLoading && (
-              <div className="text-center py-4 text-gray-500 animate-pulse">
-                Analyzing map data...
+              <div className="flex items-center justify-center py-8 text-emerald-500/80 animate-pulse gap-3">
+                <div className="w-2 h-2 bg-emerald-500 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+                <div className="w-2 h-2 bg-emerald-500 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+                <div className="w-2 h-2 bg-emerald-500 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
               </div>
             )}
 
             {result && (
-              <div className="space-y-4 max-h-60 overflow-y-auto custom-scrollbar">
-                <p className="text-sm text-gray-300 leading-relaxed">{result.text}</p>
+              <div className="space-y-4 max-h-60 overflow-y-auto custom-scrollbar relative z-10 pr-2">
+                <p className="text-xs text-gray-300 leading-relaxed font-medium">{result.text}</p>
                 {result.locations.length > 0 && (
                   <div className="space-y-2">
                     {result.locations.map((loc, i) => (
@@ -76,10 +108,12 @@ export function AssistantPanel() {
                         href={loc.uri} 
                         target="_blank" 
                         rel="noreferrer"
-                        className="flex items-center gap-3 p-3 rounded bg-emerald-900/20 border border-emerald-500/20 hover:bg-emerald-900/40 transition-colors group"
+                        className="flex items-center gap-3 p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 hover:bg-emerald-500/20 transition-all group"
                       >
-                        <MapPin size={14} className="text-emerald-500 group-hover:scale-110 transition-transform" />
-                        <span className="text-xs font-medium text-emerald-100 truncate">{loc.title}</span>
+                        <div className="p-1.5 rounded-full bg-emerald-500/20 text-emerald-400 group-hover:scale-110 transition-transform">
+                          <MapPin size={12} />
+                        </div>
+                        <span className="text-xs font-bold text-emerald-100 truncate">{loc.title}</span>
                       </a>
                     ))}
                   </div>
@@ -87,15 +121,8 @@ export function AssistantPanel() {
               </div>
             )}
           </motion.div>
-        )}
-      </AnimatePresence>
-
-      <button
-        onClick={() => setIsOpen(!isOpen)}
-        className="bg-emerald-500 hover:bg-emerald-400 text-black font-bold p-4 rounded-full shadow-[0_0_20px_rgba(16,185,129,0.4)] transition-all hover:scale-105 active:scale-95"
-      >
-        <Zap size={24} fill="currentColor" />
-      </button>
-    </div>
+        </div>
+      )}
+    </AnimatePresence>
   );
 }

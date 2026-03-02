@@ -6,6 +6,8 @@ import { v4 as uuidv4 } from 'uuid';
 import { Users, Plus, LogIn, X, Copy, Check } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
+import { gamifyName } from '../../lib/nameGamifier';
+
 export function CrewPanel() {
   const { user, crew, setCrew, members } = useStore();
   const [isOpen, setIsOpen] = useState(false);
@@ -14,7 +16,33 @@ export function CrewPanel() {
   const [copied, setCopied] = useState(false);
 
   const createSession = async () => {
-    if (!user || !rtdb) return;
+    // Fallback for simulation if no DB
+    if (!rtdb) {
+      const sessionId = uuidv4().slice(0, 6).toUpperCase();
+      const newCrew = {
+        id: sessionId,
+        ownerId: user?.uid || 'guest',
+        joinCode: sessionId,
+        createdAt: Date.now(),
+        name: `${user?.displayName || 'Racer'}'s Crew`
+      };
+      setCrew(newCrew);
+      setIsOpen(false);
+      
+      // Simulate members joining after a delay
+      setTimeout(() => {
+        useStore.getState().updateMember('sim-1', {
+          uid: 'sim-1',
+          displayName: 'Ghost Rider',
+          location: { lat: 37.7749, lng: -122.4194, heading: 0, speed: 0, timestamp: Date.now() },
+          status: 'online',
+          lastSeen: Date.now()
+        });
+      }, 5000);
+      return;
+    }
+
+    if (!user) return;
     
     const sessionId = uuidv4().slice(0, 6).toUpperCase();
     const newCrew = {
@@ -39,7 +67,49 @@ export function CrewPanel() {
   };
 
   const joinSession = async () => {
-    if (!user || !rtdb || !joinCode) return;
+    // Fallback for simulation
+    if (!rtdb) {
+      if (joinCode.length === 6) {
+        setCrew({
+          id: joinCode,
+          ownerId: 'sim-owner',
+          joinCode: joinCode,
+          createdAt: Date.now(),
+          name: `Crew ${joinCode}`
+        });
+        setIsOpen(false);
+        setJoinCode('');
+      } else if (joinCode.length > 3) {
+        // Handle Place Name Joining (Gamified)
+        const gamified = gamifyName(joinCode);
+        setCrew({
+          id: 'LOC-' + Math.floor(Math.random() * 1000),
+          ownerId: 'sim-owner',
+          joinCode: 'LOC',
+          createdAt: Date.now(),
+          name: `${gamified} Crew`
+        });
+        setIsOpen(false);
+        setJoinCode('');
+        
+        // Simulate members joining
+        setTimeout(() => {
+           useStore.getState().updateMember('sim-loc-1', {
+            uid: 'sim-loc-1',
+            displayName: 'Local Legend',
+            location: { lat: 37.7749, lng: -122.4194, heading: 0, speed: 0, timestamp: Date.now() },
+            status: 'online',
+            lastSeen: Date.now()
+          });
+        }, 2000);
+
+      } else {
+        setError('Invalid Code (Simulated)');
+      }
+      return;
+    }
+
+    if (!user || !joinCode) return;
     
     try {
       const snapshot = await get(child(ref(rtdb), `sessions/${joinCode}`));
@@ -77,17 +147,17 @@ export function CrewPanel() {
 
   return (
     <>
-      {/* Trigger Button (Top Left in HUD) */}
-      <div className="absolute top-6 left-6 z-20 pointer-events-auto">
+      {/* Trigger Button */}
+      <div className="z-20 pointer-events-auto">
         <button 
           onClick={() => setIsOpen(true)}
-          className="bg-black/40 backdrop-blur-md border border-white/10 rounded-xl p-4 text-white w-64 hover:bg-white/5 transition-colors text-left group"
+          className="bg-black/40 backdrop-blur-md border border-white/10 rounded-full md:rounded-xl w-10 h-10 md:w-64 md:h-auto flex items-center justify-center md:block md:p-4 text-white hover:bg-white/5 transition-colors text-left group"
         >
-          <div className="flex items-center gap-2 mb-2 text-emerald-400">
-            <Users size={16} />
-            <span className="font-bold text-sm tracking-wider">CREW: {crew ? crew.id : 'SOLO'}</span>
+          <div className="flex items-center justify-center md:justify-start gap-0 md:gap-2 md:mb-2 text-emerald-400">
+            <Users size={20} className="md:w-4 md:h-4" />
+            <span className="hidden md:inline font-bold text-sm tracking-wider">CREW: {crew ? crew.id : 'SOLO'}</span>
           </div>
-          <div className="text-xs text-gray-400 group-hover:text-white transition-colors">
+          <div className="hidden md:block text-xs text-gray-400 group-hover:text-white transition-colors">
             {crew ? `${Object.keys(members).length + 1} Active Members` : 'Tap to Create or Join'}
           </div>
         </button>
@@ -134,11 +204,11 @@ export function CrewPanel() {
                     <div className="flex gap-2">
                       <input 
                         type="text" 
-                        placeholder="ENTER CODE" 
+                        placeholder="ENTER CODE OR PLACE" 
                         value={joinCode}
                         onChange={(e) => setJoinCode(e.target.value.toUpperCase())}
                         className="flex-1 bg-black/50 border border-white/10 rounded-xl px-4 text-white placeholder-gray-600 focus:outline-none focus:border-emerald-500 font-mono text-center tracking-widest uppercase"
-                        maxLength={6}
+                        maxLength={20}
                       />
                       <button 
                         onClick={joinSession}

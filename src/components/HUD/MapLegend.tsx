@@ -14,7 +14,7 @@ export function MapLegend() {
   const foodPath = "M12 2C7.58 2 4 4.24 4 7v2h16V7c0-2.76-3.58-5-8-5zm-8 6v10c0 2.21 1.79 4 4 4h8c2.21 0 4-1.79 4-4V8H4z";
 
   const items = [
-    { label: "Mechanic / Repair", path: wrenchPath, color: "#fbbf24" },
+    { label: "Car Repair", path: wrenchPath, color: "#3b82f6" },
     { label: "Gas Station", path: gasPath, color: "#ef4444" },
     { label: "Hideout / Parking", path: hideoutPath, color: "#8b5cf6" },
     { label: "Food / Takeaway", path: foodPath, color: "#10b981" },
@@ -37,7 +37,7 @@ export function MapLegend() {
 
       {isOpen && (
         <div className={cn(
-          "absolute top-full right-0 mt-2 w-48 p-3 rounded-xl border backdrop-blur-md shadow-xl z-50",
+          "absolute top-full mt-2 w-48 p-3 rounded-xl border backdrop-blur-md shadow-xl z-50 left-0 right-auto md:left-auto md:right-0",
           mapStyle === 'game-night'
             ? "bg-slate-900/95 border-slate-700 text-white"
             : "bg-white/95 border-slate-200 text-slate-800"

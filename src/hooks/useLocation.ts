@@ -13,10 +13,51 @@ const SIM_PATH = [
 export function useLocation() {
   const { isSimulatorActive, setRecording, isRecording, updateRunStats } = useStore();
   const [location, setLocation] = useState<LocationUpdate | null>(null);
+  const [deviceHeading, setDeviceHeading] = useState<number | null>(null);
   const simIndex = useRef(0);
   const simProgress = useRef(0);
   const lastUpdate = useRef(Date.now());
   const runData = useRef<{ points: LocationUpdate[], startTime: number }>({ points: [], startTime: 0 });
+
+  // Device Orientation for Heading (Compass)
+  useEffect(() => {
+    if (isSimulatorActive) return;
+
+    const handleOrientation = (event: DeviceOrientationEvent) => {
+      let heading: number | null = null;
+
+      // iOS
+      if ((event as any).webkitCompassHeading !== undefined) {
+        heading = (event as any).webkitCompassHeading;
+      } 
+      // Android / Standard
+      else if (event.alpha !== null) {
+        // If absolute orientation is available, use it
+        if ((event as any).absolute || event instanceof DeviceOrientationEvent) {
+          heading = (360 - event.alpha) % 360;
+        }
+      }
+
+      if (heading !== null) {
+        setDeviceHeading(heading);
+      }
+    };
+
+    // Request permission for iOS if needed (usually needs a user gesture, 
+    // but we'll register the listener and hope for the best or handle it in a component)
+    if (typeof (DeviceOrientationEvent as any).requestPermission === 'function') {
+      // This usually needs to be called from a button click
+      // For now we just add the listener
+    }
+
+    window.addEventListener('deviceorientation', handleOrientation, true);
+    window.addEventListener('deviceorientationabsolute', handleOrientation, true);
+
+    return () => {
+      window.removeEventListener('deviceorientation', handleOrientation);
+      window.removeEventListener('deviceorientationabsolute', handleOrientation);
+    };
+  }, [isSimulatorActive]);
 
   // Simulation Loop
   useEffect(() => {
@@ -87,22 +128,92 @@ export function useLocation() {
     
     if (!navigator.geolocation) return;
 
-    const watchId = navigator.geolocation.watchPosition(
+    // Get initial position immediately
+    navigator.geolocation.getCurrentPosition(
       (pos) => {
         setLocation({
           lat: pos.coords.latitude,
           lng: pos.coords.longitude,
-          heading: pos.coords.heading || 0,
+          heading: pos.coords.heading !== null ? pos.coords.heading : (deviceHeading || 0),
           speed: pos.coords.speed || 0,
-          timestamp: pos.timestamp
+          timestamp: Date.now()
         });
+      },
+      (err) => console.error("Initial position error:", err),
+      { enableHighAccuracy: true }
+    );
+
+    const watchId = navigator.geolocation.watchPosition(
+      (pos) => {
+        const now = Date.now();
+        const newLoc = {
+          lat: pos.coords.latitude,
+          lng: pos.coords.longitude,
+          heading: pos.coords.heading !== null ? pos.coords.heading : (deviceHeading || 0),
+          speed: pos.coords.speed || 0,
+          timestamp: now
+        };
+
+        setLocation(newLoc);
+
+        // Handle Recording for Real GPS
+        if (isRecording) {
+          if (runData.current.points.length === 0) {
+            runData.current.startTime = now;
+          }
+          
+          // Calculate distance from last point
+          let addedDist = 0;
+          if (runData.current.points.length > 0) {
+            const last = runData.current.points[runData.current.points.length - 1];
+            addedDist = getDistanceFromLatLonInKm(last.lat, last.lng, newLoc.lat, newLoc.lng);
+          }
+
+          runData.current.points.push(newLoc);
+          
+          // Update stats
+          const duration = (now - runData.current.startTime) / 1000;
+          const currentDistance = (useStore.getState().currentRunStats?.distance || 0) + addedDist;
+          
+          updateRunStats({
+            distance: currentDistance,
+            duration,
+            speed: (newLoc.speed || 0) * 3.6 // m/s to km/h
+          });
+        }
       },
       (err) => console.error(err),
       { enableHighAccuracy: true }
     );
 
     return () => navigator.geolocation.clearWatch(watchId);
-  }, [isSimulatorActive]);
+  }, [isSimulatorActive, isRecording]);
 
-  return location;
+  // Combine GPS location with device heading for the final output
+  // This ensures the icon rotates even when stationary
+  return location ? { 
+    ...location, 
+    heading: (location.speed && location.speed > 1 && location.heading !== null) 
+      ? location.heading 
+      : (deviceHeading !== null ? deviceHeading : (location.heading || 0))
+  } : null;
+}
+
+// Helper
+function getDistanceFromLatLonInKm(lat1: number, lon1: number, lat2: number, lon2: number) {
+  var R = 6371; // Radius of the earth in km
+  var dLat = deg2rad(lat2-lat1);  // deg2rad below
+  var dLon = deg2rad(lon2-lon1); 
+  var a = 
+    Math.sin(dLat/2) * Math.sin(dLat/2) +
+    Math.cos(deg2rad(lat1)) * Math.cos(deg2rad(lat2)) * 
+    Math.sin(dLon/2) * Math.sin(dLon/2)
+    ; 
+  var c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a)); 
+  var d = R * c; // Distance in km
+  return d;
+}
+
+function deg2rad(deg: number) {
+  return deg * (Math.PI/180)
 }
