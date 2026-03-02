@@ -7,6 +7,8 @@ import { AssistantPanel } from './AssistantPanel';
 import { CrewPanel } from '../Session/CrewPanel';
 import { LeaderboardPanel } from '../Leaderboard/LeaderboardPanel';
 import { SearchBar } from './SearchBar';
+import { WeatherWidget } from './WeatherWidget';
+import { WelcomeBanner } from './WelcomeBanner';
 import { useLocation } from '../../hooks/useLocation';
 import { MapLegend } from './MapLegend';
 import { gamifyName } from '../../lib/nameGamifier';
@@ -39,17 +41,17 @@ export function HUD() {
   const [isShareOpen, setIsShareOpen] = React.useState(false);
   const [isAssistantOpen, setIsAssistantOpen] = React.useState(false);
 
-  const { 
-    currentRunStats, 
-    isRecording, 
-    setRecording, 
-    mapStyle, 
-    setMapStyle,
-    isSimulatorActive,
-    toggleSimulator,
-    activeTarget,
-    setActiveTarget
-  } = useStore();
+  const currentRunStats = useStore(state => state.currentRunStats);
+  const isRecording = useStore(state => state.isRecording);
+  const setRecording = useStore(state => state.setRecording);
+  const mapStyle = useStore(state => state.mapStyle);
+  const setMapStyle = useStore(state => state.setMapStyle);
+  const isSimulatorActive = useStore(state => state.isSimulatorActive);
+  const toggleSimulator = useStore(state => state.toggleSimulator);
+  const followUser = useStore(state => state.followUser);
+  const setFollowUser = useStore(state => state.setFollowUser);
+  const activeTarget = useStore(state => state.activeTarget);
+  const setActiveTarget = useStore(state => state.setActiveTarget);
   
   const location = useLocation();
   
@@ -87,11 +89,13 @@ export function HUD() {
 
     if (location && (window as any).panToLocation) {
       (window as any).panToLocation({ lat: location.lat, lng: location.lng });
+      setFollowUser(true);
     }
   };
 
   return (
     <>
+      <WelcomeBanner />
       <ShareStats isOpen={isShareOpen} onClose={() => setIsShareOpen(false)} />
       
       <div className="absolute inset-0 pointer-events-none z-10 flex flex-col justify-between">
@@ -102,6 +106,7 @@ export function HUD() {
           {/* Row 1 (Mobile): Search Bar */}
           <div className="w-full md:w-auto md:flex-1 md:order-2 flex flex-col items-center gap-3 z-50 order-1">
             <div className="flex flex-col md:flex-row items-center gap-3 w-full justify-center">
+              <WeatherWidget />
               <SearchBar onPlaceSelect={handlePlaceSelect} />
             </div>
             
@@ -275,6 +280,25 @@ export function HUD() {
               >
                 <Share2 size={18} className="md:w-5 md:h-5" />
               </button>
+            </div>
+
+            {/* Follow Toggle */}
+            <div className="flex flex-col gap-1 items-center">
+               <button
+                onClick={() => setFollowUser(!followUser)}
+                className={cn(
+                  "w-10 h-10 md:w-12 md:h-12 rounded-full flex items-center justify-center border transition-all shadow-lg hover:scale-105 active:scale-95",
+                  followUser 
+                    ? "bg-blue-500/20 border-blue-500 text-blue-400 shadow-[0_0_20px_rgba(59,130,246,0.3)]" 
+                    : "bg-black/60 border-white/20 text-gray-400 hover:bg-black/80 hover:text-white"
+                )}
+                title={followUser ? "Follow On" : "Follow Off"}
+              >
+                <Navigation size={18} className={cn("md:w-5 md:h-5", followUser && "fill-current")} />
+              </button>
+              <div className="text-center font-mono text-[8px] font-bold text-blue-500/60 uppercase tracking-widest">
+                FOLLOW
+              </div>
             </div>
 
             {/* Recenter Button */}

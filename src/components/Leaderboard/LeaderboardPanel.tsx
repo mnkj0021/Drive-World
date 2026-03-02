@@ -7,7 +7,9 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { RunSummary } from '../../types';
 
 export function LeaderboardPanel() {
-  const { user, setGhostPath } = useStore();
+  const user = useStore(state => state.user);
+  const setGhostPath = useStore(state => state.setGhostPath);
+  
   const [isOpen, setIsOpen] = useState(false);
   const [runs, setRuns] = useState<RunSummary[]>([]);
   const [loading, setLoading] = useState(false);

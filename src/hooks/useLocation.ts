@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useMemo } from 'react';
 import { useStore } from '../lib/store';
 import { LocationUpdate } from '../types';
 
@@ -11,7 +11,10 @@ const SIM_PATH = [
 ];
 
 export function useLocation() {
-  const { isSimulatorActive, setRecording, isRecording, updateRunStats } = useStore();
+  const isSimulatorActive = useStore(state => state.isSimulatorActive);
+  const isRecording = useStore(state => state.isRecording);
+  const updateRunStats = useStore(state => state.updateRunStats);
+
   const [location, setLocation] = useState<LocationUpdate | null>(null);
   const [deviceHeading, setDeviceHeading] = useState<number | null>(null);
   const simIndex = useRef(0);
@@ -106,15 +109,6 @@ export function useLocation() {
           runData.current.startTime = now;
         }
         runData.current.points.push(newLoc);
-        
-        // Update stats
-        const duration = (now - runData.current.startTime) / 1000;
-        const distance = runData.current.points.length * 0.02; // Rough approx for sim
-        updateRunStats({
-          distance,
-          duration,
-          speed: speed * 3.6 // km/h
-        });
       }
 
     }, 1000 / 60); // 60 FPS update for smoothness
@@ -162,24 +156,7 @@ export function useLocation() {
             runData.current.startTime = now;
           }
           
-          // Calculate distance from last point
-          let addedDist = 0;
-          if (runData.current.points.length > 0) {
-            const last = runData.current.points[runData.current.points.length - 1];
-            addedDist = getDistanceFromLatLonInKm(last.lat, last.lng, newLoc.lat, newLoc.lng);
-          }
-
           runData.current.points.push(newLoc);
-          
-          // Update stats
-          const duration = (now - runData.current.startTime) / 1000;
-          const currentDistance = (useStore.getState().currentRunStats?.distance || 0) + addedDist;
-          
-          updateRunStats({
-            distance: currentDistance,
-            duration,
-            speed: (newLoc.speed || 0) * 3.6 // m/s to km/h
-          });
         }
       },
       (err) => console.error(err),
@@ -191,12 +168,17 @@ export function useLocation() {
 
   // Combine GPS location with device heading for the final output
   // This ensures the icon rotates even when stationary
-  return location ? { 
-    ...location, 
-    heading: (location.speed && location.speed > 1 && location.heading !== null) 
-      ? location.heading 
-      : (deviceHeading !== null ? deviceHeading : (location.heading || 0))
-  } : null;
+  const finalLocation = useMemo(() => {
+    if (!location) return null;
+    return { 
+      ...location, 
+      heading: (location.speed && location.speed > 1 && location.heading !== null) 
+        ? location.heading 
+        : (deviceHeading !== null ? deviceHeading : (location.heading || 0))
+    };
+  }, [location, deviceHeading]);
+
+  return finalLocation;
 }
 
 // Helper

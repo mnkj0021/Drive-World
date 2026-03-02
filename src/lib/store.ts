@@ -14,6 +14,7 @@ interface AppState {
     speed: number;
   } | null;
   ghostPath: { lat: number; lng: number }[] | null;
+  followUser: boolean;
   
   activeTarget: {
     location: { lat: number; lng: number };
@@ -31,6 +32,7 @@ interface AppState {
   toggleSimulator: () => void;
   updateRunStats: (stats: { distance: number; duration: number; speed: number }) => void;
   setGhostPath: (path: { lat: number; lng: number }[] | null) => void;
+  setFollowUser: (follow: boolean) => void;
   
   // Game Actions
   setActiveTarget: (target: { location: { lat: number; lng: number }; type: string; name: string; totalDistance?: number } | null) => void;
@@ -45,6 +47,7 @@ export const useStore = create<AppState>((set) => ({
   isSimulatorActive: false, // Default to false for real location
   currentRunStats: null,
   ghostPath: null,
+  followUser: true,
   
   activeTarget: null,
 
@@ -62,6 +65,7 @@ export const useStore = create<AppState>((set) => ({
   toggleSimulator: () => set((state) => ({ isSimulatorActive: !state.isSimulatorActive })),
   updateRunStats: (stats) => set({ currentRunStats: stats }),
   setGhostPath: (path) => set({ ghostPath: path }),
+  setFollowUser: (follow) => set({ followUser: follow }),
   
   setActiveTarget: (target) => set({ activeTarget: target as any }),
 }));

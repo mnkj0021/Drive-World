@@ -6,7 +6,12 @@ import { ref, onValue, set, onDisconnect } from 'firebase/database';
 import { useLocation } from '../../hooks/useLocation';
 
 export function SessionManager() {
-  const { user, setUser, crew, setCrew, setMembers } = useStore();
+  const user = useStore(state => state.user);
+  const setUser = useStore(state => state.setUser);
+  const crew = useStore(state => state.crew);
+  const setCrew = useStore(state => state.setCrew);
+  const setMembers = useStore(state => state.setMembers);
+  
   const location = useLocation();
 
   // 1. Auth Init

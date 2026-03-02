@@ -9,7 +9,11 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { gamifyName } from '../../lib/nameGamifier';
 
 export function CrewPanel() {
-  const { user, crew, setCrew, members } = useStore();
+  const user = useStore(state => state.user);
+  const crew = useStore(state => state.crew);
+  const setCrew = useStore(state => state.setCrew);
+  const members = useStore(state => state.members);
+  
   const [isOpen, setIsOpen] = useState(false);
   const [joinCode, setJoinCode] = useState('');
   const [error, setError] = useState('');
