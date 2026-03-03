@@ -1,45 +1,161 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
+import { MapContainer, TileLayer, Marker, Polyline, useMap, useMapEvents, Circle } from 'react-leaflet';
+import L from 'leaflet';
 import { useStore } from '../../lib/store';
-import { MAP_STYLES } from '../../lib/mapStyles';
 import { useLocation } from '../../hooks/useLocation';
 import { PlaceManager } from './PlaceManager';
+import { lerpColor } from '../../lib/utils';
+
+// Fix for default marker icons in Leaflet with Vite
+import icon from 'leaflet/dist/images/marker-icon.png';
+import iconShadow from 'leaflet/dist/images/marker-shadow.png';
+
+let DefaultIcon = L.icon({
+    iconUrl: icon,
+    shadowUrl: iconShadow,
+    iconSize: [25, 41],
+    iconAnchor: [12, 41]
+});
+
+L.Marker.prototype.options.icon = DefaultIcon;
 
 interface GameMapProps {
-  onMapLoad?: (map: google.maps.Map) => void;
+  onMapLoad?: (map: L.Map) => void;
+}
+
+// Component to handle map instance and follow logic
+function MapController({ followUser, location, setMapInstance }: { followUser: boolean, location: { lat: number, lng: number } | null, setMapInstance: (map: L.Map) => void }) {
+  const map = useMap();
+  const setFollowUser = useStore(state => state.setFollowUser);
+  const setActiveTarget = useStore(state => state.setActiveTarget);
+
+  useEffect(() => {
+    setMapInstance(map);
+  }, [map, setMapInstance]);
+
+  useMapEvents({
+    dragstart: () => {
+      setFollowUser(false);
+    },
+    click: (e) => {
+      const { lat, lng } = e.latlng;
+      // Trigger routing if location exists
+      if (location && (window as any).calculateRoute) {
+        (window as any).calculateRoute({ lat, lng }, `Point (${lat.toFixed(4)}, ${lng.toFixed(4)})`);
+      }
+    }
+  });
+
+  useEffect(() => {
+    if (followUser && location) {
+      map.panTo([location.lat, location.lng], { animate: true });
+    }
+  }, [followUser, location, map]);
+
+  return null;
 }
 
 export function GameMap({ onMapLoad }: GameMapProps) {
-  const mapRef = useRef<HTMLDivElement>(null);
-  const googleMapRef = useRef<google.maps.Map | null>(null);
-  const markerRef = useRef<google.maps.Marker | null>(null);
-  const crewMarkersRef = useRef<Record<string, google.maps.Marker>>({});
-  const ghostPolylineRef = useRef<google.maps.Polyline | null>(null);
-  const directionsRendererRef = useRef<google.maps.DirectionsRenderer | null>(null);
-  const directionsServiceRef = useRef<google.maps.DirectionsService | null>(null);
-  
-  const [mapInstance, setMapInstance] = useState<google.maps.Map | null>(null);
-
   const mapStyle = useStore(state => state.mapStyle);
   const setMapStyle = useStore(state => state.setMapStyle);
-  const setFollowUser = useStore(state => state.setFollowUser);
-  const members = useStore(state => state.members);
-  const user = useStore(state => state.user);
-  const ghostPath = useStore(state => state.ghostPath);
   const followUser = useStore(state => state.followUser);
+  const ghostPath = useStore(state => state.ghostPath);
+  const breadcrumbs = useStore(state => state.breadcrumbs);
+  const routePath = useStore(state => state.routePath);
+  const setRoutePath = useStore(state => state.setRoutePath);
+  const activeTarget = useStore(state => state.activeTarget);
   const setActiveTarget = useStore(state => state.setActiveTarget);
-  
+  const isOffRoute = useStore(state => state.isOffRoute);
+  const pois = useStore(state => state.pois);
+  const cameraSettings = useStore(state => state.cameraSettings);
+  const waypoints = useStore(state => state.waypoints);
+  const addWaypoint = useStore(state => state.addWaypoint);
+  const removeWaypoint = useStore(state => state.removeWaypoint);
   const location = useLocation();
-  const [authError, setAuthError] = useState<boolean>(false);
+  const [mapInstance, setMapInstance] = useState<L.Map | null>(null);
 
-  const [simulatedMapMode, setSimulatedMapMode] = useState<boolean>(false);
-  const [liteMode, setLiteMode] = useState<boolean>(false);
+  // Handle right-click to add waypoint
+  const MapEvents = () => {
+    useMapEvents({
+      contextmenu: (e) => {
+        addWaypoint({ lat: e.latlng.lat, lng: e.latlng.lng });
+      }
+    });
+    return null;
+  };
 
-  // FORCE the working key provided by the user
-  const rawApiKey = "AIzaSyBoD6PHm8szopZ1LZu_Vwf3LUC1R2RD3QE";
-  const apiKey = rawApiKey.trim();
+  // Find the index of the point on the route closest to the user
+  const closestIndex = useMemo(() => {
+    if (!routePath || !location) return -1;
+    let minSquareDist = Infinity;
+    let index = -1;
+    
+    for (let i = 0; i < routePath.length; i++) {
+      const p = routePath[i];
+      const d = Math.pow(p.lat - location.lat, 2) + Math.pow(p.lng - location.lng, 2);
+      if (d < minSquareDist) {
+        minSquareDist = d;
+        index = i;
+      }
+    }
+    return index;
+  }, [routePath, location?.lat, location?.lng]);
 
-  // Auto-enable simulated mode if auth error occurs (and we aren't just trying lite mode)
-  const isSimulated = simulatedMapMode || (authError && !liteMode);
+  // Calculate angle to nearest route point for guidance
+  const offRouteAngle = useMemo(() => {
+    if (!isOffRoute || !location || !routePath || closestIndex === -1) return 0;
+    const target = routePath[closestIndex];
+    
+    // Simple angle calculation
+    const dy = target.lat - location.lat;
+    const dx = target.lng - location.lng;
+    const angle = (Math.atan2(dx, dy) * 180 / Math.PI + 360) % 360;
+    
+    // Relative to screen (since map is rotated by -rotation)
+    return (angle - (location.heading || 0) + 360) % 360;
+  }, [isOffRoute, location, routePath, closestIndex]);
+
+  // Calculate speed in km/h for coloring
+  const speedKmH = (location?.speed || 0) * 3.6;
+
+  // Determine route color based on speed thresholds with smooth gradient
+  const routeColor = useMemo(() => {
+    const green = '#10b981';
+    const orange = '#f59e0b';
+    const red = '#ef4444';
+
+    if (speedKmH < 65) return green;
+    if (speedKmH < 75) {
+      const t = (speedKmH - 65) / 10;
+      return lerpColor(green, orange, t);
+    }
+    if (speedKmH < 115) return orange;
+    if (speedKmH < 125) {
+      const t = (speedKmH - 115) / 10;
+      return lerpColor(orange, red, t);
+    }
+    return red;
+  }, [speedKmH]);
+
+  // Split path into passed and remaining
+  const passedPath = useMemo(() => {
+    if (!routePath || closestIndex === -1) return null;
+    return routePath.slice(0, closestIndex + 1);
+  }, [routePath, closestIndex]);
+
+  const remainingPath = useMemo(() => {
+    if (!routePath || closestIndex === -1) return routePath;
+    return routePath.slice(closestIndex);
+  }, [routePath, closestIndex]);
+
+  // Tile Layer URL based on style
+  const tileUrl = useMemo(() => {
+    return mapStyle === 'game-night' 
+      ? 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'
+      : 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png';
+  }, [mapStyle]);
+
+  const attribution = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>';
 
   // Set initial style based on time of day
   useEffect(() => {
@@ -48,493 +164,381 @@ export function GameMap({ onMapLoad }: GameMapProps) {
     setMapStyle(isNight ? 'game-night' : 'game-day');
   }, []);
 
-  const initMap = async () => {
-    if (!mapRef.current) return;
+  // Custom Player Icon
+  const playerIcon = useMemo(() => {
+    const color = mapStyle === 'game-night' ? "#00ffcc" : "#2563eb";
+    const rotation = location?.heading || 0;
+    
+    return L.divIcon({
+      className: 'custom-player-icon',
+      html: `
+        <div style="transform: rotate(${rotation}deg); transition: transform 0.3s ease-out; width: 30px; height: 30px; display: flex; align-items: center; justify-content: center;">
+          <svg width="30" height="30" viewBox="0 0 30 30" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M15 5L25 25L15 20L5 25L15 5Z" fill="${color}" stroke="white" stroke-width="2"/>
+          </svg>
+        </div>
+      `,
+      iconSize: [30, 30],
+      iconAnchor: [15, 15]
+    });
+  }, [mapStyle, location?.heading]);
 
-    try {
-      const map = new google.maps.Map(mapRef.current, {
-        center: { lat: 37.7749, lng: -122.4194 },
-        zoom: 17,
-        disableDefaultUI: true,
-        styles: MAP_STYLES[mapStyle],
-        backgroundColor: '#222222',
-        tilt: 45,
-        heading: 0,
-      });
+  // Target Icon (rotated back to stay upright)
+  const targetIcon = useMemo(() => {
+    const rotation = location?.heading || 0;
+    return L.divIcon({
+      className: 'custom-target-icon',
+      html: `
+        <div class="relative flex items-center justify-center" style="transform: rotate(${rotation}deg); transition: transform 0.3s ease-out;">
+          <div class="absolute w-8 h-8 bg-emerald-500/20 rounded-full animate-ping"></div>
+          <div class="w-4 h-4 bg-emerald-500 border-2 border-white rounded-full shadow-[0_0_10px_rgba(16,185,129,0.5)]"></div>
+        </div>
+      `,
+      iconSize: [32, 32],
+      iconAnchor: [16, 16]
+    });
+  }, [location?.heading]);
 
-      console.log("Map initialized (Manual Script)");
+  // POI Icons
+  const getPoiIcon = (type: string) => {
+    const rotation = location?.heading || 0;
+    const wrenchPath = "M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z";
+    const gasPath = "M19.8 18.4a1.8 1.8 0 0 0 1.2-1.7V8.3a1.8 1.8 0 0 0-1.8-1.8h-1.4V4.8A1.8 1.8 0 0 0 16 3H8a1.8 1.8 0 0 0-1.8 1.8v13.4H5v-2h1.2V4.8A3 3 0 0 0 3.2 7.8v8.4H2v2h16v-2h-1.2v-6.8h2.4v7.3c0 .5.4.9.9.9s.9-.4.9-.9v-1.3zM8 15V6h6v9H8z";
+    const hideoutPath = "M19 5h-2V3H7v2H5c-1.1 0-2 .9-2 2v1c0 2.55 1.92 4.63 4.39 4.94.63 1.5 1.98 2.63 3.61 2.96V19H7v2h10v-2h-4v-3.1c1.63-.33 2.98-1.46 3.61-2.96C19.08 12.63 21 10.55 21 8V7c0-1.1-.9-2-2-2zM7 8c-1.1 0-2-.9-2-2h2v2zm10 0h2c0 1.1-.9 2-2 2v-2z";
+    const foodPath = "M12 2C7.58 2 4 4.24 4 7v2h16V7c0-2.76-3.58-5-8-5zm-8 6v10c0 2.21 1.79 4 4 4h8c2.21 0 4-1.79 4-4V8H4z";
 
-      googleMapRef.current = map;
-      setMapInstance(map);
-      if (onMapLoad) onMapLoad(map);
+    let path = gasPath;
+    let color = "#ef4444";
 
-      // Add click listener
-      map.addListener("click", (e: google.maps.MapMouseEvent) => {
-        if (e.latLng && (window as any).calculateRoute) {
-          (window as any).calculateRoute(e.latLng);
-        }
-      });
-      
-      // Auto-disable follow mode when user drags map
-      map.addListener("dragstart", () => {
-        setFollowUser(false);
-      });
+    if (type === 'car_repair') { path = wrenchPath; color = "#3b82f6"; }
+    if (type === 'parking') { path = hideoutPath; color = "#8b5cf6"; }
+    if (type === 'restaurant') { path = foodPath; color = "#10b981"; }
 
-      // Initialize Directions (Only if not in Lite Mode)
-      if (!liteMode && google.maps.DirectionsService) {
-        directionsServiceRef.current = new google.maps.DirectionsService();
-        directionsRendererRef.current = new google.maps.DirectionsRenderer({
-          map,
-          suppressMarkers: false,
-          polylineOptions: {
-             strokeColor: mapStyle === 'game-night' ? '#00ffcc' : '#2563eb',
-             strokeWeight: 6,
-             strokeOpacity: 0.8
-          }
-        });
-      }
-
-      // Create player marker
-      const color = mapStyle === 'game-night' ? "#00ffcc" : "#2563eb";
-      markerRef.current = new google.maps.Marker({
-        map,
-        icon: {
-          path: 'M 0,-15 L 10,10 L 0,5 L -10,10 Z',
-          fillColor: color,
-          fillOpacity: 1,
-          strokeWeight: 2,
-          strokeColor: "#ffffff",
-          scale: 1.2,
-          rotation: 0,
-          anchor: new google.maps.Point(0, 0)
-        },
-        zIndex: 1000
-      });
-
-    } catch (e) {
-      console.error("Error initializing map:", e);
-      setAuthError(true);
-    }
+    return L.divIcon({
+      className: 'custom-poi-icon',
+      html: `
+        <div class="flex items-center justify-center" style="transform: rotate(${rotation}deg); transition: transform 0.3s ease-out;">
+          <div class="w-8 h-8 rounded-full bg-white shadow-lg flex items-center justify-center border-2" style="border-color: ${color}">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="${color}">
+              <path d="${path}" />
+            </svg>
+          </div>
+        </div>
+      `,
+      iconSize: [32, 32],
+      iconAnchor: [16, 16]
+    });
   };
 
-  useEffect(() => {
-    // Global handler for Google Maps auth errors
-    (window as any).gm_authFailure = () => {
-      console.error("Google Maps Authentication Failure detected.");
-      setAuthError(true);
-    };
-
-    if (window.google && window.google.maps) {
-      initMap();
-      return;
-    }
-
-    // Check if script is already present to prevent "multiple includes" error
-    if (document.getElementById('google-maps-script')) {
-      console.log("Maps script already in DOM, waiting...");
-      return;
-    }
-
-    // Manual Script Injection (Matches user's working HTML)
-    const script = document.createElement('script');
-    script.id = 'google-maps-script';
-    
-    // If Lite Mode is on, ONLY load geometry (no places)
-    const libraries = liteMode ? "geometry" : "places,geometry";
-    
-    script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&callback=initMap&libraries=${libraries}&v=weekly`;
-    script.async = true;
-    script.defer = true;
-    
-    script.onerror = () => {
-      console.error("Google Maps script failed to load.");
-      setAuthError(true);
-    };
-
-    // Define global callback
-    (window as any).initMap = () => {
-      initMap();
-    };
-
-    document.head.appendChild(script);
-
-    return () => {
-      // Cleanup if needed
-    };
-  }, [liteMode]); // Re-run if liteMode changes
-
-  // Update Map Style
-  useEffect(() => {
-    if (googleMapRef.current) {
-      googleMapRef.current.setOptions({ styles: MAP_STYLES[mapStyle] });
+  // Expose map instance to window for global actions (like panToLocation)
+  const MapInstanceExposer = () => {
+    const map = useMap();
+    useEffect(() => {
+      (window as any).panToLocation = (pos: { lat: number, lng: number }) => {
+        map.setView([pos.lat, pos.lng], 17);
+      };
       
-      // Update directions style if exists
-      if (directionsRendererRef.current) {
-        const color = mapStyle === 'game-night' ? '#00ffcc' : '#2563eb';
-        directionsRendererRef.current.setOptions({
-          polylineOptions: {
-            strokeColor: color,
-            strokeWeight: 6,
-            strokeOpacity: 0.8,
-            icons: [{
-              icon: {
-                path: google.maps.SymbolPath.FORWARD_CLOSED_ARROW,
-                scale: 3,
-                strokeColor: color,
-                fillColor: '#ffffff',
-                fillOpacity: 1
-              },
-              offset: '0',
-              repeat: '100px'
-            }]
-          }
-        });
-      }
-    }
-  }, [mapStyle]);
-
-  // Animate Route Icons
-  useEffect(() => {
-    const interval = setInterval(() => {
-       if (directionsRendererRef.current && directionsRendererRef.current.getMap()) {
-          // Animation logic if needed
-       }
-    }, 100);
-
-    return () => clearInterval(interval);
-  }, []);
-
-  // Update Player Marker Position
-  useEffect(() => {
-    if (!markerRef.current || !location) return;
-    
-    const pos = { lat: location.lat, lng: location.lng };
-    markerRef.current.setPosition(pos);
-
-    if (followUser && googleMapRef.current) {
-      googleMapRef.current.panTo(pos);
-    }
-    
-    // Update icon rotation and color based on style
-    const color = mapStyle === 'game-night' ? "#00ffcc" : "#2563eb";
-    markerRef.current.setIcon({
-      path: 'M 0,-15 L 10,10 L 0,5 L -10,10 Z',
-      fillColor: color,
-      fillOpacity: 1,
-      strokeWeight: 2,
-      strokeColor: "#ffffff",
-      scale: 1.2,
-      rotation: location.heading || 0,
-      anchor: new google.maps.Point(0, 0)
-    });
-
-  }, [location, mapStyle, mapInstance]);
-
-  // Custom Route Rendering for Animation
-  const routeLayersRef = useRef<google.maps.Polyline[]>([]);
-  const routeMarkersRef = useRef<google.maps.Marker[]>([]); // Store custom start/end markers
-
-  // Custom Pin SVGs (Base64 encoded for Google Maps)
-  const ORIGIN_PIN = 'data:image/svg+xml;base64,' + btoa(`
-  <svg width="60" height="60" viewBox="0 0 60 60" xmlns="http://www.w3.org/2000/svg">
-    <defs>
-      <filter id="glow-cyan" x="-50%" y="-50%" width="200%" height="200%">
-        <feGaussianBlur stdDeviation="4" result="coloredBlur"/>
-        <feMerge>
-          <feMergeNode in="coloredBlur"/>
-          <feMergeNode in="SourceGraphic"/>
-        </feMerge>
-      </filter>
-    </defs>
-    <circle cx="30" cy="30" r="8" fill="#00f0ff" filter="url(#glow-cyan)">
-      <animate attributeName="opacity" values="1;0.5;1" dur="2s" repeatCount="indefinite" />
-    </circle>
-    <circle cx="30" cy="30" r="4" fill="#ffffff" />
-    <circle cx="30" cy="30" r="16" stroke="#00f0ff" stroke-width="2" fill="none" opacity="0.6" />
-    <circle cx="30" cy="30" r="24" stroke="#00f0ff" stroke-width="1" fill="none" opacity="0.3" stroke-dasharray="4 4" />
-  </svg>`);
-
-  const DEST_PIN = 'data:image/svg+xml;base64,' + btoa(`
-  <svg width="60" height="60" viewBox="0 0 60 60" xmlns="http://www.w3.org/2000/svg">
-    <defs>
-      <filter id="glow-pink" x="-50%" y="-50%" width="200%" height="200%">
-        <feGaussianBlur stdDeviation="4" result="coloredBlur"/>
-        <feMerge>
-          <feMergeNode in="coloredBlur"/>
-          <feMergeNode in="SourceGraphic"/>
-        </feMerge>
-      </filter>
-      <linearGradient id="grad-pink" x1="0%" y1="0%" x2="100%" y2="100%">
-        <stop offset="0%" style="stop-color:#ff00cc;stop-opacity:1" />
-        <stop offset="100%" style="stop-color:#330033;stop-opacity:1" />
-      </linearGradient>
-    </defs>
-    <path d="M30 54 L16 26 C16 18 22 12 30 12 C38 12 44 18 44 26 L30 54 Z" fill="url(#grad-pink)" stroke="#ff00cc" stroke-width="2" filter="url(#glow-pink)" />
-    <circle cx="30" cy="26" r="6" fill="#ffffff" />
-  </svg>`);
-
-  useEffect(() => {
-    let animationId: number;
-    const animate = () => {
-      const time = Date.now();
-      const pulse = (Math.sin(time / 800) + 1) / 2;
-      const pixelOffset = (time / 15) % 20;
-      const layers = routeLayersRef.current;
-      if (layers.length >= 3) {
-        layers[0].setOptions({ strokeOpacity: 0.1 + (pulse * 0.15) });
-        if (layers[2]) {
-           const icons = layers[2].get('icons');
-           if (icons && icons[0]) {
-             icons[0].offset = pixelOffset + 'px';
-             layers[2].set('icons', icons);
-           }
-        }
-      }
-      animationId = requestAnimationFrame(animate);
-    };
-    animationId = requestAnimationFrame(animate);
-    return () => cancelAnimationFrame(animationId);
-  }, []);
-
-  useEffect(() => {
-    (window as any).calculateRoute = (destination: google.maps.LatLng, name?: string) => {
-      if (!directionsServiceRef.current || !directionsRendererRef.current || !location) return;
-      directionsServiceRef.current.route({
-        origin: { lat: location.lat, lng: location.lng },
-        destination: destination,
-        travelMode: google.maps.TravelMode.DRIVING
-      }, (result, status) => {
-        if (status === google.maps.DirectionsStatus.OK && result) {
-          const leg = result.routes[0].legs[0];
-          const totalDistance = leg.distance?.value || 0;
-          setActiveTarget({
-            location: { lat: destination.lat(), lng: destination.lng() },
-            name: name || "Custom Point",
-            type: null,
-            totalDistance: totalDistance
-          });
-          directionsRendererRef.current?.setDirections(result);
-          directionsRendererRef.current?.setOptions({
-            polylineOptions: { visible: false },
-            suppressMarkers: true
-          });
-          routeMarkersRef.current.forEach(m => m.setMap(null));
-          const originMarker = new google.maps.Marker({
-            position: leg.start_location,
-            map: googleMapRef.current,
-            icon: {
-              url: ORIGIN_PIN,
-              scaledSize: new google.maps.Size(80, 80),
-              anchor: new google.maps.Point(40, 40)
-            },
-            zIndex: 100
-          });
-          const destMarker = new google.maps.Marker({
-            position: leg.end_location,
-            map: googleMapRef.current,
-            icon: {
-              url: DEST_PIN,
-              scaledSize: new google.maps.Size(80, 80),
-              anchor: new google.maps.Point(40, 75)
-            },
-            zIndex: 100,
-            animation: google.maps.Animation.DROP
-          });
-          routeMarkersRef.current = [originMarker, destMarker];
-          if (googleMapRef.current && result.routes[0]?.overview_path) {
-             routeLayersRef.current.forEach(p => p.setMap(null));
-             const path = result.routes[0].overview_path;
-             const baseColor = mapStyle === 'game-night' ? '#00ffcc' : '#2563eb';
-             const glowColor = mapStyle === 'game-night' ? '#00ffcc' : '#3b82f6';
-             const layer1 = new google.maps.Polyline({
-               path,
-               map: googleMapRef.current,
-               strokeColor: glowColor,
-               strokeWeight: 12,
-               strokeOpacity: 0.15,
-               zIndex: 10,
-               clickable: false
-             });
-             const layer2 = new google.maps.Polyline({
-               path,
-               map: googleMapRef.current,
-               strokeColor: baseColor,
-               strokeWeight: 6,
-               strokeOpacity: 0.6,
-               zIndex: 11,
-               clickable: false
-             });
-             const layer3 = new google.maps.Polyline({
-               path,
-               map: googleMapRef.current,
-               strokeColor: 'transparent',
-               strokeWeight: 0,
-               zIndex: 12,
-               clickable: false,
-               icons: [{
-                 icon: {
-                   path: 'M 0,-4 L 0,4',
-                   strokeColor: '#ffffff',
-                   strokeWeight: 2,
-                   scale: 1,
-                   strokeOpacity: 0.5
-                 },
-                 offset: '0px',
-                 repeat: '20px'
-               }]
-             });
-             routeLayersRef.current = [layer1, layer2, layer3];
-          }
-        } else {
-          console.warn('Directions request failed due to ' + status);
-        }
-      });
-    };
-  }, [location, mapStyle, mapInstance]);
-
-  useEffect(() => {
-    (window as any).panToLocation = (pos: { lat: number, lng: number }) => {
-      if (googleMapRef.current) {
-        googleMapRef.current.panTo(pos);
-        googleMapRef.current.setZoom(17);
-      }
-    };
-    (window as any).clearRoute = () => {
-      if (directionsRendererRef.current) {
-        directionsRendererRef.current.setDirections({ routes: [] });
-      }
-      routeLayersRef.current.forEach(p => p.setMap(null));
-      routeLayersRef.current = [];
-      routeMarkersRef.current.forEach(m => m.setMap(null));
-      routeMarkersRef.current = [];
-    };
-  }, []);
-
-  if (isSimulated) {
-    return (
-      <div className="w-full h-full absolute inset-0 z-0 bg-gray-900 overflow-hidden">
-        {/* Grid Pattern */}
-        <div className="absolute inset-0 opacity-20" 
-             style={{ 
-               backgroundImage: 'linear-gradient(#333 1px, transparent 1px), linear-gradient(90deg, #333 1px, transparent 1px)', 
-               backgroundSize: '40px 40px' 
-             }} 
-        />
+      (window as any).calculateRoute = async (dest: { lat: number, lng: number }, name?: string) => {
+        if (!location) return;
         
-        {/* Fake Player Marker */}
-        <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 transition-transform duration-300"
-             style={{ transform: `translate(-50%, -50%) rotate(${location?.heading || 0}deg)` }}>
-          <div className="w-0 h-0 border-l-[10px] border-l-transparent border-r-[10px] border-r-transparent border-b-[20px] border-b-[#00ffcc]" />
-        </div>
+        const currentWaypoints = useStore.getState().waypoints;
+        const points = [
+          { lat: location.lat, lng: location.lng },
+          ...currentWaypoints,
+          dest
+        ];
 
-        {/* Fake POIs */}
-        <div className="absolute top-1/3 left-1/3 p-2 bg-amber-500/20 rounded-full border border-amber-500 animate-pulse">
-          <div className="w-4 h-4 bg-amber-500 rounded-full" />
-        </div>
-        <div className="absolute bottom-1/3 right-1/3 p-2 bg-blue-500/20 rounded-full border border-blue-500 animate-pulse">
-          <div className="w-4 h-4 bg-blue-500 rounded-full" />
-        </div>
+        const coordsString = points.map(p => `${p.lng},${p.lat}`).join(';');
+        const straightLineDist = L.latLng(location.lat, location.lng).distanceTo(L.latLng(dest.lat, dest.lng));
 
-        {/* Error Banner / Toggle */}
-        <div className="absolute top-4 left-4 right-4 z-50 flex flex-col gap-2">
-          <div className="bg-red-900/90 border border-red-500/50 p-3 rounded-lg shadow-lg backdrop-blur-md flex items-start justify-between">
-            <div>
-              <h3 className="text-red-200 font-bold text-sm flex items-center gap-2">
-                <span className="w-2 h-2 bg-red-500 rounded-full animate-pulse"/>
-                Map Connection Failed - Using Simulation
-              </h3>
-              <p className="text-red-300/80 text-xs mt-1">
-                {authError ? "Key valid for Map, but Directions/Places API likely disabled." : "No API Key provided."}
-              </p>
+        try {
+          const response = await fetch(
+            `https://router.project-osrm.org/route/v1/driving/${coordsString}?overview=full&geometries=geojson`
+          );
+          const data = await response.json();
+          
+          if (data.routes && data.routes[0]) {
+            const coords = data.routes[0].geometry.coordinates.map((c: any) => ({
+              lat: c[1],
+              lng: c[0]
+            }));
+            setRoutePath(coords);
+            
+            setActiveTarget({
+              location: dest,
+              type: null,
+              name: name || "Destination",
+              totalDistance: data.routes[0].distance,
+              initialDistance: straightLineDist
+            });
+          }
+        } catch (error) {
+          console.error("Routing error:", error);
+          // Fallback to straight line
+          setRoutePath([
+            { lat: location.lat, lng: location.lng },
+            ...currentWaypoints,
+            { lat: dest.lat, lng: dest.lng }
+          ]);
+          setActiveTarget({
+            location: dest,
+            type: null,
+            name: name || "Destination",
+            totalDistance: straightLineDist,
+            initialDistance: straightLineDist
+          });
+        }
+      };
+      
+      (window as any).clearRoute = () => {
+        setRoutePath(null);
+        setActiveTarget(null);
+        useStore.getState().clearWaypoints();
+      };
+      
+      if (onMapLoad) onMapLoad(map);
+    }, [map, location]);
+    return null;
+  };
+
+  const rotation = followUser ? (location?.heading || 0) : 0;
+
+  // Calculate distance to nearest route point in meters
+  const offRouteDistanceMeters = useMemo(() => {
+    if (!isOffRoute || !location || !routePath || closestIndex === -1) return 0;
+    const target = routePath[closestIndex];
+    // Simple distance approx in degrees to meters (1 deg ~ 111km)
+    const distDeg = Math.sqrt(Math.pow(target.lat - location.lat, 2) + Math.pow(target.lng - location.lng, 2));
+    return Math.round(distDeg * 111000);
+  }, [isOffRoute, location, routePath, closestIndex]);
+
+  return (
+    <div className="w-full h-full absolute inset-0 z-0 bg-[#0f172a] overflow-hidden">
+      {/* Off-Route Warning Overlay */}
+      {isOffRoute && (
+        <div className="absolute top-24 left-1/2 -translate-x-1/2 z-50 pointer-events-auto">
+          <div className="bg-red-500/90 backdrop-blur-md px-6 py-4 rounded-3xl border-2 border-white/20 shadow-[0_0_40px_rgba(239,68,68,0.5)] flex flex-col gap-4 animate-in fade-in zoom-in duration-300">
+            <div className="flex items-center gap-4">
+              <div className="w-12 h-12 bg-white rounded-2xl flex items-center justify-center shadow-lg">
+                <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+                  <line x1="12" y1="9" x2="12" y2="13"/>
+                  <line x1="12" y1="17" x2="12.01" y2="17"/>
+                </svg>
+              </div>
+              <div className="text-white">
+                <div className="text-[10px] uppercase font-black tracking-[0.2em] opacity-70">Navigation Error</div>
+                <div className="text-xl font-black italic tracking-tighter uppercase leading-none">Off Route</div>
+                <div className="text-xs font-bold text-red-100 mt-1 opacity-80">
+                  {offRouteDistanceMeters}m from path • Follow arrow or re-route
+                </div>
+              </div>
+              <div 
+                className="w-12 h-12 bg-white/20 rounded-2xl flex items-center justify-center transition-transform duration-300 shadow-inner"
+                style={{ transform: `rotate(${offRouteAngle}deg)` }}
+              >
+                <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                  <line x1="12" y1="19" x2="12" y2="5"/>
+                  <polyline points="5 12 12 5 19 12"/>
+                </svg>
+              </div>
             </div>
+
+            {/* Instruction Text */}
+            <div className="bg-black/20 rounded-xl px-4 py-2 text-[10px] font-bold text-white/90 uppercase tracking-wider text-center">
+              Head {offRouteAngle < 45 || offRouteAngle > 315 ? 'Straight' : offRouteAngle < 135 ? 'Right' : offRouteAngle < 225 ? 'Back' : 'Left'} to return to route
+            </div>
+
             <div className="flex gap-2">
               <button 
-                onClick={() => window.location.reload()}
-                className="px-3 py-1 bg-white/10 hover:bg-white/20 text-white text-xs rounded border border-white/20 transition-colors"
+                onClick={() => {
+                  if (activeTarget && (window as any).calculateRoute) {
+                    (window as any).calculateRoute(activeTarget.location, activeTarget.name);
+                  }
+                }}
+                className="flex-1 bg-white text-red-600 font-black uppercase tracking-widest text-xs py-3 rounded-xl hover:bg-red-50 transition-colors shadow-lg"
               >
-                Retry
+                Re-Route
+              </button>
+              <button 
+                onClick={() => useStore.getState().setIsOffRoute(false)}
+                className="px-4 bg-black/20 text-white font-bold uppercase tracking-widest text-[10px] rounded-xl hover:bg-black/40 transition-colors"
+              >
+                Dismiss
               </button>
             </div>
           </div>
-          
-          {authError && (
-            <div className="bg-black/80 p-2 rounded border border-gray-700 text-xs text-gray-400">
-              <p className="font-bold text-yellow-500">Why did the HTML test work but this fails?</p>
-              <p>Your HTML test only loads the basic Map. This app requires 3 APIs:</p>
-              <ul className="list-disc list-inside ml-2 mt-1">
-                <li>Maps JavaScript API (Enabled ✅)</li>
-                <li><strong>Directions API</strong> (Likely Disabled ❌)</li>
-                <li><strong>Places API</strong> (Likely Disabled ❌)</li>
-              </ul>
-              <p className="mt-1">Please enable Directions & Places APIs in Google Cloud.</p>
+        </div>
+      )}
+
+      {/* Camera PIP Overlay */}
+      {cameraSettings.showFeed && (
+        <div className="absolute bottom-6 right-6 w-64 h-36 bg-black rounded-2xl border border-white/20 shadow-2xl overflow-hidden z-50 group">
+          <div className="absolute inset-0 flex items-center justify-center bg-slate-900">
+            <div className="flex flex-col items-center gap-2 opacity-50">
+              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
+                <circle cx="12" cy="13" r="4"/>
+                <line x1="1" y1="1" x2="23" y2="23" />
+              </svg>
+              <span className="text-[10px] text-white font-bold uppercase tracking-widest">No Signal</span>
             </div>
-          )}
-        </div>
-      </div>
-    );
-  }
-
-  if (authError && !simulatedMapMode) {
-    return (
-      <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/90 text-white p-8">
-        <div className="max-w-md text-center space-y-4">
-          <h2 className="text-2xl font-bold text-red-500">Map Connection Failed</h2>
-          
-          <div className="bg-gray-900 p-4 rounded-lg text-left text-sm text-gray-300">
-            <p className="mb-2">The API Key was rejected. This usually means:</p>
-            <ul className="list-disc list-inside space-y-1 text-gray-400">
-              <li><strong>Directions API</strong> or <strong>Places API</strong> is not enabled.</li>
-              <li>Billing is not active on the Google Cloud Project.</li>
-              <li>Referrer restrictions block this URL.</li>
-            </ul>
           </div>
-
-          <div className="flex flex-col gap-2">
-             {!liteMode && (
-               <button 
-                 onClick={() => {
-                   setAuthError(false);
-                   setLiteMode(true);
-                   // Force reload script
-                   const oldScript = document.getElementById('google-maps-script');
-                   if (oldScript) oldScript.remove();
-                   (window as any).google = undefined; // Clear global to force reload
-                 }}
-                 className="px-6 py-3 bg-blue-600 hover:bg-blue-500 text-white rounded-lg font-bold transition-colors"
-               >
-                 Try "Lite Mode" (Map Only)
-               </button>
-             )}
-             
-             <button 
-               onClick={() => setSimulatedMapMode(true)}
-               className="px-6 py-3 bg-gray-700 hover:bg-gray-600 text-white rounded-lg font-medium transition-colors"
-             >
-               Switch to Simulated Map
-             </button>
-             
-             <button 
-               onClick={() => window.location.reload()}
-               className="px-6 py-2 text-sm text-gray-500 hover:text-white transition-colors"
-             >
-               Reload Page
-             </button>
+          <div className="absolute top-2 left-2 px-2 py-0.5 bg-red-500 rounded text-[8px] text-white font-bold uppercase tracking-tighter flex items-center gap-1">
+            <div className="w-1 h-1 bg-white rounded-full animate-pulse" />
+            Live Feed
           </div>
-          
-          {liteMode && (
-            <p className="text-xs text-yellow-500 mt-2">
-              Lite Mode failed too. The issue is likely the API Key itself or Billing.
-            </p>
-          )}
+          <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
+            <button 
+              onClick={() => useStore.getState().setCameraSettings({ showFeed: false })}
+              className="p-1 bg-black/50 rounded-full text-white hover:bg-black/80"
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
+                <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+              </svg>
+            </button>
+          </div>
         </div>
-      </div>
-    );
-  }
+      )}
 
-  return (
-    <>
-      <div ref={mapRef} className="w-full h-full absolute inset-0 z-0" />
-      <PlaceManager map={mapInstance} />
-    </>
+      <div 
+        className="w-full h-full transition-transform duration-500 ease-out"
+        style={{ transform: `rotate(${-rotation}deg) scale(1.5)` }} // Increased scale for better coverage
+      >
+        <MapContainer
+          center={[location?.lat || 37.7749, location?.lng || -122.4194]}
+          zoom={17}
+          zoomControl={false}
+          className="w-full h-full"
+          style={{ background: 'transparent' }}
+        >
+          <TileLayer
+            url={tileUrl}
+            attribution={attribution}
+          />
+          
+          <MapController followUser={followUser} location={location} setMapInstance={setMapInstance} />
+          <MapInstanceExposer />
+
+          {location && (
+            <>
+              {location.accuracy && location.accuracy < 100 && (
+                <Circle 
+                  center={[location.lat, location.lng]}
+                  radius={location.accuracy}
+                  pathOptions={{
+                    color: '#10b981',
+                    fillColor: '#10b981',
+                    fillOpacity: 0.1,
+                    weight: 1,
+                    opacity: 0.4
+                  }}
+                />
+              )}
+              <Marker 
+                position={[location.lat, location.lng]} 
+                icon={playerIcon}
+                zIndexOffset={1000}
+              />
+            </>
+          )}
+
+          {activeTarget && (
+            <Marker 
+              position={[activeTarget.location.lat, activeTarget.location.lng]} 
+              icon={targetIcon}
+            />
+          )}
+
+          {passedPath && passedPath.length > 1 && (
+            <Polyline 
+              positions={passedPath.map(p => [p.lat, p.lng])}
+              pathOptions={{
+                color: mapStyle === 'game-night' ? '#475569' : '#cbd5e1', // Slate-500 or Slate-300
+                weight: 6, // Match main route weight
+                opacity: 0.6, // More visible but still dimmed
+                lineJoin: 'round'
+              }}
+            />
+          )}
+
+          {remainingPath && remainingPath.length > 1 && (
+            <Polyline 
+              positions={remainingPath.map(p => [p.lat, p.lng])}
+              pathOptions={{
+                color: routeColor,
+                weight: 6,
+                opacity: 0.8,
+                lineJoin: 'round'
+              }}
+            />
+          )}
+
+          {/* Breadcrumbs (Actual path taken - "Backtrack Trail") */}
+          {breadcrumbs && breadcrumbs.length > 1 && (
+            <Polyline 
+              positions={breadcrumbs.map(p => [p.lat, p.lng])}
+              pathOptions={{
+                color: mapStyle === 'game-night' ? '#a78bfa' : '#8b5cf6', // Violet-400 or Violet-500
+                weight: 3,
+                opacity: 0.7,
+                lineJoin: 'round',
+                dashArray: '1, 10' // Dot-like trail
+              }}
+            />
+          )}
+
+          {ghostPath && ghostPath.length > 0 && (
+            <Polyline 
+              positions={ghostPath.map(p => [p.lat, p.lng])}
+              pathOptions={{
+                color: mapStyle === 'game-night' ? '#00ffcc' : '#2563eb',
+                weight: 4,
+                opacity: 0.6,
+                dashArray: '10, 10'
+              }}
+            />
+          )}
+
+          {pois && pois.map(poi => (
+            <Marker 
+              key={poi.id}
+              position={[poi.lat, poi.lng]} 
+              icon={getPoiIcon(poi.type)}
+              eventHandlers={{
+                click: () => {
+                  if ((window as any).calculateRoute) {
+                    (window as any).calculateRoute({ lat: poi.lat, lng: poi.lng }, poi.name);
+                  }
+                }
+              }}
+            />
+          ))}
+
+          {waypoints.map((wp, i) => (
+            <Marker 
+              key={`wp-${i}`}
+              position={[wp.lat, wp.lng]} 
+              icon={L.divIcon({
+                className: 'custom-waypoint-icon',
+                html: `
+                  <div class="w-6 h-6 bg-yellow-500 rounded-full border-2 border-white shadow-lg flex items-center justify-center text-[10px] font-bold text-black">
+                    ${i + 1}
+                  </div>
+                `,
+                iconSize: [24, 24],
+                iconAnchor: [12, 12]
+              })}
+              eventHandlers={{
+                contextmenu: () => removeWaypoint(i)
+              }}
+            />
+          ))}
+
+          <PlaceManager map={mapInstance} />
+          <MapEvents />
+        </MapContainer>
+      </div>
+    </div>
   );
 }

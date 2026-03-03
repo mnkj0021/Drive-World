@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react';
-import { getMapsAssistance, GroundingResult } from '../../lib/gemini';
+import { getMapsAssistance, getSuggestedPOIs, GroundingResult } from '../../lib/gemini';
 import { useLocation } from '../../hooks/useLocation';
+import { useStore } from '../../lib/store';
 import { Sparkles, X, MapPin, Zap } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { cn } from '../../lib/utils';
+import { POI } from '../../types';
 
 interface AssistantPanelProps {
   isOpen: boolean;
@@ -14,6 +16,7 @@ export function AssistantPanel({ isOpen, setIsOpen }: AssistantPanelProps) {
   const [isLoading, setIsLoading] = useState(false);
   const [result, setResult] = useState<GroundingResult | null>(null);
   const location = useLocation();
+  const { setPois } = useStore();
 
   const [radius, setRadius] = useState<number>(5); // Radius in km
 
@@ -21,6 +24,20 @@ export function AssistantPanel({ isOpen, setIsOpen }: AssistantPanelProps) {
     if (!location) return;
     setIsLoading(true);
     setResult(null);
+    
+    // If it's a standard POI type, we also update the map POIs
+    const poiTypeMap: Record<string, POI['type']> = {
+      'Gas Stations': 'gas_station',
+      'Late Night Food': 'restaurant',
+      'Repair Shops': 'car_repair',
+      'Car Meets': 'parking'
+    };
+
+    const poiType = poiTypeMap[prompt];
+    if (poiType) {
+      const suggestedPois = await getSuggestedPOIs(poiType, { lat: location.lat, lng: location.lng });
+      setPois(suggestedPois);
+    }
     
     // Customize prompt based on selection
     let fullPrompt = `Find ${prompt} near me within ${radius}km. Return a list of specific locations.`;
@@ -77,7 +94,7 @@ export function AssistantPanel({ isOpen, setIsOpen }: AssistantPanelProps) {
             </div>
 
             <div className="grid grid-cols-2 gap-2 mb-6 relative z-10">
-              {['Scenic Routes', 'Car Meets', 'Gas Stations', 'Late Night Food'].map((item) => (
+              {['Scenic Routes', 'Repair Shops', 'Gas Stations', 'Late Night Food'].map((item) => (
                 <button
                   key={item}
                   onClick={() => handleQuery(item)}

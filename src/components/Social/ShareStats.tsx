@@ -1,7 +1,7 @@
 import React, { useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, Share2, Download, Camera } from 'lucide-react';
-import html2canvas from 'html2canvas';
+import { domToPng, domToBlob } from 'modern-screenshot';
 import { useStore } from '../../lib/store';
 import { cn } from '../../lib/utils';
 
@@ -30,16 +30,14 @@ export function ShareStats({ isOpen, onClose }: ShareStatsProps) {
     setIsGenerating(true);
     
     try {
-      const canvas = await html2canvas(cardRef.current, {
-        backgroundColor: null,
-        scale: 2, // High res
-        useCORS: true,
-        logging: false
+      const dataUrl = await domToPng(cardRef.current, {
+        scale: 2,
+        backgroundColor: 'transparent',
       });
       
       const link = document.createElement('a');
       link.download = `run-stats-${Date.now()}.png`;
-      link.href = canvas.toDataURL('image/png');
+      link.href = dataUrl;
       link.click();
     } catch (e) {
       console.error("Failed to generate image", e);
@@ -53,28 +51,25 @@ export function ShareStats({ isOpen, onClose }: ShareStatsProps) {
     setIsGenerating(true);
 
     try {
-      const canvas = await html2canvas(cardRef.current, {
-        backgroundColor: null,
+      const blob = await domToBlob(cardRef.current, {
         scale: 2,
-        useCORS: true
+        backgroundColor: 'transparent',
       });
 
-      canvas.toBlob(async (blob) => {
-        if (!blob) return;
-        
-        const file = new File([blob], 'stats.png', { type: 'image/png' });
-        
-        if (navigator.canShare && navigator.canShare({ files: [file] })) {
-          await navigator.share({
-            title: 'My Run Stats',
-            text: `Just crushed a ${distance.toFixed(1)}km run! 🏃‍♂️💨`,
-            files: [file]
-          });
-        } else {
-          // Fallback to download if Web Share API not supported
-          handleDownload();
-        }
-      });
+      if (!blob) return;
+      
+      const file = new File([blob], 'stats.png', { type: 'image/png' });
+      
+      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+        await navigator.share({
+          title: 'My Run Stats',
+          text: `Just crushed a ${distance.toFixed(1)}km run! 🏃‍♂️💨`,
+          files: [file]
+        });
+      } else {
+        // Fallback to download if Web Share API not supported
+        handleDownload();
+      }
     } catch (e) {
       console.error("Share failed", e);
     } finally {
@@ -102,13 +97,15 @@ export function ShareStats({ isOpen, onClose }: ShareStatsProps) {
             {/* The Card to Capture */}
             <div 
               ref={cardRef}
-              className="rounded-3xl overflow-hidden border shadow-2xl relative aspect-[4/5] flex flex-col justify-between p-8"
+              className="rounded-3xl overflow-hidden relative aspect-[4/5] flex flex-col justify-between p-8"
               style={{
                 background: mapStyle === 'game-night' 
                   ? 'linear-gradient(to bottom right, #0f172a, #1e293b, #000000)' 
                   : 'linear-gradient(to bottom right, #ffffff, #f3f4f6, #e5e7eb)',
-                borderColor: mapStyle === 'game-night' ? 'rgba(255,255,255,0.1)' : 'rgba(255,255,255,0.5)',
-                color: mapStyle === 'game-night' ? '#ffffff' : '#0f172a'
+                border: '1px solid',
+                borderColor: mapStyle === 'game-night' ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)',
+                color: mapStyle === 'game-night' ? '#ffffff' : '#0f172a',
+                boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)'
               }}
             >
               {/* Background Texture */}
@@ -123,9 +120,10 @@ export function ShareStats({ isOpen, onClose }: ShareStatsProps) {
                   </h2>
                 </div>
                 <div 
-                  className="px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider border"
+                  className="px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider"
                   style={{
                     backgroundColor: mapStyle === 'game-night' ? 'rgba(16, 185, 129, 0.2)' : '#10b981',
+                    border: '1px solid',
                     borderColor: mapStyle === 'game-night' ? '#10b981' : '#059669',
                     color: mapStyle === 'game-night' ? '#34d399' : '#ffffff'
                   }}
@@ -147,20 +145,22 @@ export function ShareStats({ isOpen, onClose }: ShareStatsProps) {
               {/* Grid Stats */}
               <div className="relative z-10 grid grid-cols-2 gap-4">
                 <div 
-                  className="p-4 rounded-2xl border backdrop-blur-sm"
+                  className="p-4 rounded-2xl"
                   style={{
                     backgroundColor: mapStyle === 'game-night' ? 'rgba(255,255,255,0.05)' : 'rgba(255,255,255,0.4)',
-                    borderColor: mapStyle === 'game-night' ? 'rgba(255,255,255,0.1)' : 'rgba(255,255,255,0.2)'
+                    border: '1px solid',
+                    borderColor: mapStyle === 'game-night' ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)'
                   }}
                 >
                   <div className="text-xs font-bold uppercase opacity-50 mb-1">Avg Speed</div>
                   <div className="text-2xl font-mono font-bold">{speed.toFixed(1)} <span className="text-sm opacity-60">km/h</span></div>
                 </div>
                 <div 
-                  className="p-4 rounded-2xl border backdrop-blur-sm"
+                  className="p-4 rounded-2xl"
                   style={{
                     backgroundColor: mapStyle === 'game-night' ? 'rgba(255,255,255,0.05)' : 'rgba(255,255,255,0.4)',
-                    borderColor: mapStyle === 'game-night' ? 'rgba(255,255,255,0.1)' : 'rgba(255,255,255,0.2)'
+                    border: '1px solid',
+                    borderColor: mapStyle === 'game-night' ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)'
                   }}
                 >
                   <div className="text-xs font-bold uppercase opacity-50 mb-1">Duration</div>
@@ -169,7 +169,10 @@ export function ShareStats({ isOpen, onClose }: ShareStatsProps) {
               </div>
 
               {/* Footer */}
-              <div className="relative z-10 mt-6 pt-6 border-t border-white/10 flex justify-between items-center opacity-60">
+              <div 
+                className="relative z-10 mt-6 pt-6 flex justify-between items-center opacity-60"
+                style={{ borderTop: '1px solid rgba(255,255,255,0.1)' }}
+              >
                 <div className="text-xs font-mono">{new Date().toLocaleDateString()}</div>
                 <div className="text-xs font-bold uppercase tracking-widest">Run Crew App</div>
               </div>

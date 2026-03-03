@@ -7,6 +7,7 @@ import { GameMap } from './components/Map/GameMap';
 import { HUD } from './components/HUD/Overlay';
 import { SessionManager } from './components/Session/SessionManager';
 import { RunManager } from './components/Run/RunManager';
+import { SettingsPanel } from './components/Settings/SettingsPanel';
 
 export default function App() {
   return (
@@ -15,6 +16,7 @@ export default function App() {
       <RunManager />
       <GameMap />
       <HUD />
+      <SettingsPanel />
       
       {/* Vignette & Grain Overlay for Cinematic Feel */}
       <div className="absolute inset-0 pointer-events-none z-20 bg-[radial-gradient(circle_at_center,transparent_0%,rgba(0,0,0,0.4)_100%)]" />

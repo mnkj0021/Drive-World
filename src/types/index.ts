@@ -11,6 +11,7 @@ export interface LocationUpdate {
   lng: number;
   heading: number;
   speed: number; // m/s
+  accuracy?: number; // meters
   timestamp: number;
 }
 
@@ -49,3 +50,31 @@ export interface RunSummary {
 }
 
 export type MapStyle = 'game-day' | 'game-night';
+
+export interface POI {
+  id: string;
+  lat: number;
+  lng: number;
+  type: 'gas_station' | 'restaurant' | 'car_repair' | 'parking';
+  name: string;
+  rating?: number;
+  address?: string;
+}
+
+export interface Waypoint {
+  lat: number;
+  lng: number;
+  name?: string;
+}
+
+export interface Challenge {
+  id: string;
+  title: string;
+  description: string;
+  type: 'speed' | 'distance' | 'time' | 'smoothness';
+  targetValue: number;
+  currentValue: number;
+  unit: string;
+  completed: boolean;
+  rewardXP: number;
+}

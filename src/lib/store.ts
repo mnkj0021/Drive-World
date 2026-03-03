@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { UserProfile, CrewSession, CrewMember, MapStyle, RunSummary } from '../types';
+import { UserProfile, CrewSession, CrewMember, MapStyle, RunSummary, POI, Waypoint, Challenge } from '../types/index';
 
 interface AppState {
   user: UserProfile | null;
@@ -15,12 +15,40 @@ interface AppState {
   } | null;
   ghostPath: { lat: number; lng: number }[] | null;
   followUser: boolean;
+  breadcrumbs: { lat: number; lng: number }[];
+  routePath: { lat: number; lng: number }[] | null;
+  isOffRoute: boolean;
+  history: RunSummary[];
   
+  pois: POI[];
+  showHUD: boolean;
+  cameraSettings: {
+    enabled: boolean;
+    showFeed: boolean;
+  };
+
+  // Settings
+  isSettingsOpen: boolean;
+  toggleSettings: () => void;
+
+  // Route Customization
+  waypoints: Waypoint[];
+  addWaypoint: (point: Waypoint) => void;
+  removeWaypoint: (index: number) => void;
+  clearWaypoints: () => void;
+
+  // Challenges
+  challenges: Challenge[];
+  updateChallenge: (id: string, progress: number) => void;
+  completeChallenge: (id: string) => void;
+  resetChallenges: () => void;
+
   activeTarget: {
     location: { lat: number; lng: number };
     type: 'gas_station' | 'restaurant' | 'parking' | 'car_repair' | null;
     name: string;
     totalDistance?: number;
+    initialDistance?: number;
   } | null;
 
   setUser: (user: UserProfile | null) => void;
@@ -33,9 +61,18 @@ interface AppState {
   updateRunStats: (stats: { distance: number; duration: number; speed: number }) => void;
   setGhostPath: (path: { lat: number; lng: number }[] | null) => void;
   setFollowUser: (follow: boolean) => void;
+  setRoutePath: (path: { lat: number; lng: number }[] | null) => void;
+  setIsOffRoute: (isOffRoute: boolean) => void;
+  addBreadcrumb: (point: { lat: number; lng: number }) => void;
+  clearBreadcrumbs: () => void;
+  addRunToHistory: (run: RunSummary) => void;
   
+  setPois: (pois: POI[]) => void;
+  setShowHUD: (show: boolean) => void;
+  setCameraSettings: (settings: Partial<AppState['cameraSettings']>) => void;
+
   // Game Actions
-  setActiveTarget: (target: { location: { lat: number; lng: number }; type: string; name: string; totalDistance?: number } | null) => void;
+  setActiveTarget: (target: { location: { lat: number; lng: number }; type: string; name: string; totalDistance?: number; initialDistance?: number } | null) => void;
 }
 
 export const useStore = create<AppState>((set) => ({
@@ -48,8 +85,75 @@ export const useStore = create<AppState>((set) => ({
   currentRunStats: null,
   ghostPath: null,
   followUser: true,
+  breadcrumbs: [],
+  routePath: null,
+  isOffRoute: false,
+  history: [],
   
   activeTarget: null,
+  pois: [],
+  showHUD: true,
+  cameraSettings: {
+    enabled: false,
+    showFeed: false,
+  },
+
+  isSettingsOpen: false,
+  toggleSettings: () => set((state) => ({ isSettingsOpen: !state.isSettingsOpen })),
+
+  waypoints: [],
+  addWaypoint: (point) => set((state) => ({ waypoints: [...state.waypoints, point] })),
+  removeWaypoint: (index) => set((state) => ({ waypoints: state.waypoints.filter((_, i) => i !== index) })),
+  clearWaypoints: () => set({ waypoints: [] }),
+
+  challenges: [
+    {
+      id: 'c1',
+      title: 'Speed Demon',
+      description: 'Reach 100 km/h',
+      type: 'speed',
+      targetValue: 100,
+      currentValue: 0,
+      unit: 'km/h',
+      completed: false,
+      rewardXP: 500
+    },
+    {
+      id: 'c2',
+      title: 'Marathon',
+      description: 'Drive 5 km in one session',
+      type: 'distance',
+      targetValue: 5,
+      currentValue: 0,
+      unit: 'km',
+      completed: false,
+      rewardXP: 1000
+    },
+    {
+      id: 'c3',
+      title: 'Smooth Operator',
+      description: 'Drive 2 km without sudden braking',
+      type: 'smoothness',
+      targetValue: 2,
+      currentValue: 0,
+      unit: 'km',
+      completed: false,
+      rewardXP: 750
+    }
+  ],
+  updateChallenge: (id, progress) => set((state) => ({
+    challenges: state.challenges.map(c => 
+      c.id === id ? { ...c, currentValue: progress, completed: progress >= c.targetValue ? true : c.completed } : c
+    )
+  })),
+  completeChallenge: (id) => set((state) => ({
+    challenges: state.challenges.map(c => 
+      c.id === id ? { ...c, completed: true } : c
+    )
+  })),
+  resetChallenges: () => set((state) => ({
+    challenges: state.challenges.map(c => ({ ...c, currentValue: 0, completed: false }))
+  })),
 
   setUser: (user) => set({ user }),
   setCrew: (crew) => set({ crew }),
@@ -61,11 +165,34 @@ export const useStore = create<AppState>((set) => ({
   })),
   setMembers: (members) => set({ members }),
   setMapStyle: (style) => set({ mapStyle: style }),
-  setRecording: (isRecording) => set({ isRecording, currentRunStats: isRecording ? { distance: 0, duration: 0, speed: 0 } : null }),
+  setRecording: (isRecording) => set((state) => ({ 
+    isRecording, 
+    currentRunStats: isRecording ? { distance: 0, duration: 0, speed: 0 } : null,
+    breadcrumbs: isRecording ? [] : state.breadcrumbs // Clear breadcrumbs when starting new recording
+  })),
   toggleSimulator: () => set((state) => ({ isSimulatorActive: !state.isSimulatorActive })),
   updateRunStats: (stats) => set({ currentRunStats: stats }),
   setGhostPath: (path) => set({ ghostPath: path }),
   setFollowUser: (follow) => set({ followUser: follow }),
+  setRoutePath: (path) => set({ routePath: path }),
+  setIsOffRoute: (isOffRoute) => set({ isOffRoute }),
+  addBreadcrumb: (point) => set((state) => {
+    // Only add if it's far enough from the last point to avoid noise
+    const lastPoint = state.breadcrumbs[state.breadcrumbs.length - 1];
+    if (lastPoint) {
+      const dist = Math.sqrt(Math.pow(point.lat - lastPoint.lat, 2) + Math.pow(point.lng - lastPoint.lng, 2));
+      if (dist < 0.00001) return state; // ~1 meter
+    }
+    return { breadcrumbs: [...state.breadcrumbs, point] };
+  }),
+  clearBreadcrumbs: () => set({ breadcrumbs: [] }),
+  addRunToHistory: (run) => set((state) => ({ history: [run, ...state.history] })),
   
+  setPois: (pois) => set({ pois }),
+  setShowHUD: (show) => set({ showHUD: show }),
+  setCameraSettings: (settings) => set((state) => ({ 
+    cameraSettings: { ...state.cameraSettings, ...settings } 
+  })),
+
   setActiveTarget: (target) => set({ activeTarget: target as any }),
 }));
