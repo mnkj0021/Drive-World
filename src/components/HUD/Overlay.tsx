@@ -434,14 +434,6 @@ export function HUD() {
               </button>
               
               <div className="hidden md:flex gap-2">
-                <button
-                  onClick={handleLocateMe}
-                  className="p-3 rounded-2xl bg-black/60 backdrop-blur-xl border border-white/10 text-gray-400 hover:text-white hover:bg-black/80 transition-all shadow-lg"
-                  title="Locate Me"
-                >
-                  <Crosshair size={20} />
-                </button>
-                
                 <div className="flex bg-black/60 backdrop-blur-xl rounded-2xl border border-white/10 p-1.5 shadow-lg gap-1">
                   <button
                     onClick={() => setMapStyle('game-day')}

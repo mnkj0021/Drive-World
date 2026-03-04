@@ -67,6 +67,7 @@ export function GameMap({ onMapLoad }: GameMapProps) {
   const setActiveTarget = useStore(state => state.setActiveTarget);
   const isOffRoute = useStore(state => state.isOffRoute);
   const pois = useStore(state => state.pois);
+  const members = useStore(state => state.members);
   const cameraSettings = useStore(state => state.cameraSettings);
   const waypoints = useStore(state => state.waypoints);
   const addWaypoint = useStore(state => state.addWaypoint);
@@ -182,6 +183,33 @@ export function GameMap({ onMapLoad }: GameMapProps) {
       iconAnchor: [15, 15]
     });
   }, [mapStyle, location?.heading]);
+
+  // Crew Member Icon
+  const getCrewIcon = (member: any) => {
+    const color = "#d946ef"; // Fuchsia-500
+    const heading = member.location?.heading || 0;
+    
+    // Calculate label rotation to keep it upright relative to screen
+    // Map is rotated by -rotation, so we need to rotate label by +rotation
+    // But the marker is rotated by heading, so we need to subtract heading
+    const labelRotation = -heading + rotation;
+
+    return L.divIcon({
+      className: 'custom-crew-icon',
+      html: `
+        <div style="transform: rotate(${heading}deg); transition: transform 0.3s ease-out; width: 30px; height: 30px; display: flex; align-items: center; justify-content: center; position: relative;">
+          <svg width="30" height="30" viewBox="0 0 30 30" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M15 5L25 25L15 20L5 25L15 5Z" fill="${color}" stroke="white" stroke-width="2"/>
+          </svg>
+          <div style="position: absolute; top: -24px; left: 50%; transform: translateX(-50%) rotate(${labelRotation}deg); white-space: nowrap; background: rgba(0,0,0,0.6); backdrop-filter: blur(4px); color: white; padding: 2px 6px; border-radius: 4px; font-size: 10px; font-weight: bold; pointer-events: none; border: 1px solid rgba(255,255,255,0.2); box-shadow: 0 2px 4px rgba(0,0,0,0.3);">
+            ${member.displayName}
+          </div>
+        </div>
+      `,
+      iconSize: [30, 30],
+      iconAnchor: [15, 15]
+    });
+  };
 
   // Target Icon (rotated back to stay upright)
   const targetIcon = useMemo(() => {
@@ -442,6 +470,17 @@ export function GameMap({ onMapLoad }: GameMapProps) {
               />
             </>
           )}
+
+          {Object.values(members).map((member: any) => (
+            member.location && (
+              <Marker 
+                key={member.uid}
+                position={[member.location.lat, member.location.lng]} 
+                icon={getCrewIcon(member)}
+                zIndexOffset={900}
+              />
+            )
+          ))}
 
           {activeTarget && (
             <Marker 

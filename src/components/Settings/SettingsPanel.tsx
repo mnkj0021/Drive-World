@@ -13,7 +13,17 @@ export function SettingsPanel() {
   const cameraSettings = useStore(state => state.cameraSettings);
   const setCameraSettings = useStore(state => state.setCameraSettings);
   const user = useStore(state => state.user);
+  const setUser = useStore(state => state.setUser);
   const challenges = useStore(state => state.challenges);
+  const [editingName, setEditingName] = React.useState(false);
+  const [newName, setNewName] = React.useState('');
+
+  const handleNameSave = () => {
+    if (user && newName.trim()) {
+      setUser({ ...user, displayName: newName.trim() });
+      setEditingName(false);
+    }
+  };
 
   return (
     <AnimatePresence>
@@ -65,9 +75,41 @@ export function SettingsPanel() {
                   >
                     {user?.displayName?.substring(0, 2).toUpperCase() || 'DR'}
                   </div>
-                  <div>
-                    <div className="text-lg font-bold text-white">{user?.displayName || 'Anonymous Driver'}</div>
-                    <div className="text-sm text-slate-400">ID: {user?.uid || '---'}</div>
+                  <div className="flex-1">
+                    {editingName ? (
+                      <div className="flex gap-2">
+                        <input
+                          type="text"
+                          value={newName}
+                          onChange={(e) => setNewName(e.target.value)}
+                          className="bg-slate-800 border border-slate-700 rounded px-2 py-1 text-white text-sm w-full"
+                          placeholder="Enter name"
+                          autoFocus
+                        />
+                        <button 
+                          onClick={handleNameSave}
+                          className="bg-emerald-500 text-white px-3 py-1 rounded text-xs font-bold"
+                        >
+                          Save
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="flex items-center justify-between w-full">
+                        <div>
+                          <div className="text-lg font-bold text-white">{user?.displayName || 'Anonymous Driver'}</div>
+                          <div className="text-sm text-slate-400">ID: {user?.uid || '---'}</div>
+                        </div>
+                        <button 
+                          onClick={() => {
+                            setNewName(user?.displayName || '');
+                            setEditingName(true);
+                          }}
+                          className="text-xs text-emerald-400 hover:text-emerald-300 underline ml-4"
+                        >
+                          Edit
+                        </button>
+                      </div>
+                    )}
                   </div>
                 </div>
               </section>
