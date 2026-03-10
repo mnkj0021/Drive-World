@@ -1,20 +1,54 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
-</div>
+# Drive World
 
-# Run and deploy your AI Studio app
+Drive World is a mobile-first driving and navigation app built with React, Vite, Leaflet, Zustand, Firebase, and Capacitor Android.
 
-This contains everything you need to run your app locally.
+## Features
 
-View your app in AI Studio: https://ai.studio/apps/658fbf30-dfb3-4df2-a3f6-2bcc05b872a6
+- Real-time GPS tracking with route following
+- Destination search with country-first mode
+- Saved places (Home / Work / Favorite)
+- Run recording, run history, and leaderboard
+- Mobile HUD optimized for on-road visibility
+- Capacitor Android packaging and install flow
 
-## Run Locally
+## Tech Stack
 
-**Prerequisites:**  Node.js
+- React + TypeScript + Vite
+- Tailwind CSS
+- Leaflet + OpenStreetMap + OSRM routing
+- Firebase Auth + Realtime Database + Firestore
+- Capacitor Android
 
+## Local Development
+
+Prerequisites:
+
+- Node.js 20+
+- npm
+
+Setup:
 
 1. Install dependencies:
    `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
+2. Copy env template and set keys:
+   `cp .env.example .env.local`
+3. Start dev server:
    `npm run dev`
+
+## Useful Scripts
+
+- `npm run lint` - Type check
+- `npm run build` - Production web build
+- `npm run android:build:debug` - Build Android debug APK
+- `npm run android:install:debug` - Install APK on connected phone
+- `npm run deploy:cloudflare` - Deploy `dist` to Cloudflare Pages
+
+## Android (Phone-first workflow)
+
+1. Connect phone with USB debugging enabled.
+2. Build APK:
+   `npm run android:build:debug`
+3. Install on device:
+   `npm run android:install:debug`
+4. Launch app:
+   `adb shell am start -n com.driveworld.app/.MainActivity`
