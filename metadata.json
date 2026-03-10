@@ -1,0 +1,5 @@
+{
+  "name": "DriveWorld",
+  "description": "A gamified driving companion app with custom map styles and real-time location tracking.",
+  "requestFramePermissions": ["geolocation"]
+}
